@@ -1,7 +1,6 @@
 package org.broadinstitute.hellbender.tools.walkers.mutect;
 
 import htsjdk.samtools.SAMFileHeader;
-import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import htsjdk.variant.vcf.*;
@@ -159,8 +158,7 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         return filters;
     }
 
-    public void writeHeader(final VariantContextWriter vcfWriter, final SAMSequenceDictionary sequenceDictionary,
-                            final Set<VCFHeaderLine>  defaultToolHeaderLines) {
+    public void writeHeader(final VariantContextWriter vcfWriter, final Set<VCFHeaderLine> defaultToolHeaderLines) {
         final Set<VCFHeaderLine> headerInfo = new HashSet<>();
         headerInfo.add(new VCFHeaderLine(Mutect2FilteringEngine.FILTERING_STATUS_VCF_KEY, "Warning: unfiltered Mutect 2 calls.  Please run " + FilterMutectCalls.class.getSimpleName() + " to remove false positives."));
 
@@ -180,7 +178,7 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         headerInfo.addAll(getSampleHeaderLines());
 
         final VCFHeader vcfHeader = new VCFHeader(headerInfo, samplesList.asListOfSamples());
-        vcfHeader.setSequenceDictionary(sequenceDictionary);
+        vcfHeader.setSequenceDictionary(header.getSequenceDictionary());
         vcfWriter.writeHeader(vcfHeader);
     }
 
@@ -278,16 +276,10 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         return AssemblyBasedCallerUtils.splitReadsBySample(samplesList, header, reads);
     }
 
-    /**
-     * Shutdown this M2 engine, closing resources as appropriate
-     */
     public void shutdown() {
         likelihoodCalculationEngine.close();
         aligner.close();
-
-        if ( haplotypeBAMWriter.isPresent() ) {
-            haplotypeBAMWriter.get().close();
-        }
+        haplotypeBAMWriter.ifPresent(writer -> writer.close());
     }
 
     @Override
