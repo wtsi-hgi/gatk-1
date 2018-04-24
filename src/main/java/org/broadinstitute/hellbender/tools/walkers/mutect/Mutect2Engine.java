@@ -20,7 +20,6 @@ import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.*;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ReadThreadingAssembler;
 import org.broadinstitute.hellbender.utils.*;
 import org.broadinstitute.hellbender.utils.activityprofile.ActivityProfileState;
-import org.broadinstitute.hellbender.utils.downsampling.AlleleBiasedDownsamplingUtils;
 import org.broadinstitute.hellbender.utils.fasta.CachingIndexedFastaSequenceFile;
 import org.broadinstitute.hellbender.utils.genotyper.IndexedSampleList;
 import org.broadinstitute.hellbender.utils.genotyper.ReadLikelihoods;
@@ -100,35 +99,20 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     public Mutect2Engine(final M2ArgumentCollection MTAC, final boolean createBamOutIndex, final boolean createBamOutMD5, final SAMFileHeader header, final String reference ) {
         this.MTAC = Utils.nonNull(MTAC);
         this.header = Utils.nonNull(header);
-        Utils.nonNull(reference);
-        referenceReader = AssemblyBasedCallerUtils.createReferenceReader(reference);
+        referenceReader = AssemblyBasedCallerUtils.createReferenceReader(Utils.nonNull(reference));
         aligner = SmithWatermanAligner.getAligner(MTAC.smithWatermanImplementation);
         samplesList = new IndexedSampleList(new ArrayList<>(ReadUtils.getSamplesFromHeader(header)));
-        // If sample name is encoded from {@link GetSampleName}, decode it
-        tumorSampleName = samplesList.asListOfSamples().contains(MTAC.tumorSampleName) ?
-                MTAC.tumorSampleName : IOUtils.urlDecode(MTAC.tumorSampleName);
-        normalSampleName = MTAC.normalSampleName == null || samplesList.asListOfSamples().contains(MTAC.normalSampleName) ?
-                MTAC.normalSampleName : IOUtils.urlDecode(MTAC.normalSampleName);
-        initialize(createBamOutIndex, createBamOutMD5);
-    }
-
-    private void initialize(final boolean createBamOutIndex, final boolean createBamOutBamMD5) {
-        if (!samplesList.asListOfSamples().contains(tumorSampleName)) {
-            throw new UserException.BadInput("BAM header sample names " + samplesList.asListOfSamples() + "does not contain given tumor" +
-                    " sample name " + tumorSampleName);
-        } else if (normalSampleName != null && !samplesList.asListOfSamples().contains(normalSampleName)) {
-            throw new UserException.BadInput("BAM header sample names " + samplesList.asListOfSamples() + "does not contain given normal" +
-                    " sample name " + normalSampleName);
-        }
+        tumorSampleName = decodeSampleNameIfNecessary(MTAC.tumorSampleName);
+        normalSampleName = MTAC.normalSampleName == null ? null : decodeSampleNameIfNecessary(MTAC.normalSampleName);
+        checkSampleInBamHeader(tumorSampleName);
+        checkSampleInBamHeader(normalSampleName);
 
         annotationEngine = VariantAnnotatorEngine.ofSelectedMinusExcluded(MTAC.defaultGATKVariantAnnotationArgumentCollection, null, Collections.emptyList(), false);
-
         assemblyEngine = AssemblyBasedCallerUtils.createReadThreadingAssembler(MTAC);
         likelihoodCalculationEngine = AssemblyBasedCallerUtils.createLikelihoodCalculationEngine(MTAC.likelihoodArgs);
         genotypingEngine = new SomaticGenotypingEngine(samplesList, MTAC, tumorSampleName, normalSampleName);
         genotypingEngine.setAnnotationEngine(annotationEngine);
-        haplotypeBAMWriter = AssemblyBasedCallerUtils.createBamWriter(MTAC, createBamOutIndex, createBamOutBamMD5, header);
-
+        haplotypeBAMWriter = AssemblyBasedCallerUtils.createBamWriter(MTAC, createBamOutIndex, createBamOutMD5, header);
         trimmer.initialize(MTAC.assemblyRegionTrimmerArgs, header.getSequenceDictionary(), MTAC.debug,
                 MTAC.genotypingOutputMode == GenotypingOutputMode.GENOTYPE_GIVEN_ALLELES, false);
     }
@@ -366,5 +350,15 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         return pe.getQual() > MINIMUM_BASE_QUALITY &&
                 ((pe.isBeforeSoftClip() && pe.getRead().getBaseQuality(offset + 1) > MINIMUM_BASE_QUALITY)
                         || (pe.isAfterSoftClip() && pe.getRead().getBaseQuality(offset - 1) > MINIMUM_BASE_QUALITY));
+    }
+
+    private void checkSampleInBamHeader(final String sample) {
+        if (sample != null && !samplesList.asListOfSamples().contains(sample)) {
+            throw new UserException.BadInput("Sample " + sample + " is not in BAM header: " + samplesList.asListOfSamples());
+        }
+    }
+
+    private String decodeSampleNameIfNecessary(final String name) {
+        return samplesList.asListOfSamples().contains(name) ? name : IOUtils.urlDecode(name);
     }
 }
