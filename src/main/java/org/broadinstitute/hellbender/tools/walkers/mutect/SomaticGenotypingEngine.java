@@ -9,7 +9,6 @@ import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.DefaultRealMatrixChangingVisitor;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.util.FastMath;
-import org.apache.log4j.Logger;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.afcalc.AFCalculator;
@@ -39,9 +38,8 @@ import static org.broadinstitute.hellbender.utils.OptimizationUtils.argmax;
 public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine {
 
     private final M2ArgumentCollection MTAC;
-
-    public final String tumorSampleName;
-    private final String matchedNormalSampleName;
+    public final String tumorSample;
+    private final String normalSample;
     final boolean hasNormal;
 
     // {@link GenotypingEngine} requires a non-null {@link AFCalculatorProvider} but this class doesn't need it.  Thus we make a dummy
@@ -60,13 +58,13 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
 
     public SomaticGenotypingEngine(final SampleList samples,
                                    final M2ArgumentCollection MTAC,
-                                   final String tumorSampleName,
-                                   final String matchedNormalSampleName) {
+                                   final String tumorSample,
+                                   final String normalSample) {
         super(MTAC, samples, DUMMY_AF_CALCULATOR_PROVIDER, !MTAC.doNotRunPhysicalPhasing);
         this.MTAC = MTAC;
-        this.tumorSampleName = tumorSampleName;
-        this.matchedNormalSampleName = matchedNormalSampleName;
-        hasNormal = matchedNormalSampleName != null;
+        this.tumorSample = tumorSample;
+        this.normalSample = normalSample;
+        hasNormal = normalSample != null;
     }
 
     /**
@@ -90,7 +88,7 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
         Utils.nonNull(log10ReadLikelihoods, "likelihoods are null");
         Utils.validateArg(log10ReadLikelihoods.numberOfSamples() > 0, "likelihoods have no samples");
         Utils.nonNull(activeRegionWindow, "activeRegionWindow is null");
-        Utils.validateArg(log10ReadLikelihoods.samples().contains(tumorSampleName), "readLikelihoods does not contain the tumor sample ");
+        Utils.validateArg(log10ReadLikelihoods.samples().contains(tumorSample), "readLikelihoods does not contain the tumor sample ");
 
         final List<Haplotype> haplotypes = log10ReadLikelihoods.alleles();
 
@@ -120,9 +118,9 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
                     new SimpleInterval(mergedVC).expandWithinContig(ALLELE_EXTENSION, header.getSequenceDictionary()));
             filterOverlappingReads(log10Likelihoods, mergedVC.getReference(), loc, false);
 
-            final LikelihoodMatrix<Allele> log10TumorMatrix = log10Likelihoods.sampleMatrix(log10Likelihoods.indexOfSample(tumorSampleName));
+            final LikelihoodMatrix<Allele> log10TumorMatrix = log10Likelihoods.sampleMatrix(log10Likelihoods.indexOfSample(tumorSample));
             final Optional<LikelihoodMatrix<Allele>> log10NormalMatrix =
-                    getForNormal(() -> log10Likelihoods.sampleMatrix(log10Likelihoods.indexOfSample(matchedNormalSampleName)));
+                    getForNormal(() -> log10Likelihoods.sampleMatrix(log10Likelihoods.indexOfSample(normalSample)));
 
             final PerAlleleCollection<Double> tumorLog10Odds = somaticLog10Odds(log10TumorMatrix);
             final Optional<PerAlleleCollection<Double>> normalLog10Odds = getForNormal(() -> diploidAltLog10Odds(log10NormalMatrix.get()));
@@ -225,7 +223,7 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
                                         final Optional<LikelihoodMatrix<Allele>> normalLog10Matrix,
                                         final VariantContextBuilder callVcb) {
         final double[] tumorAlleleCounts = getEffectiveCounts(tumorLog10Matrix);
-        final Genotype tumorGenotype = new GenotypeBuilder(tumorSampleName, tumorLog10Matrix.alleles())
+        final Genotype tumorGenotype = new GenotypeBuilder(tumorSample, tumorLog10Matrix.alleles())
                 .AD(Arrays.stream(tumorAlleleCounts).mapToInt(x -> (int) FastMath.round(x)).toArray())
                 .attribute(GATKVCFConstants.ALLELE_FRACTION_KEY, getAltAlleleFractions(tumorAlleleCounts))
                 .make();
@@ -238,7 +236,7 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
         // if we are calling with a normal, build the genotype for the sample to appear in vcf
         if (hasNormal) {
             final double[] normalAlleleCounts = getEffectiveCounts(normalLog10Matrix.get());
-            final Genotype normalGenotype = new GenotypeBuilder(matchedNormalSampleName, homRefAllelesforNormalGenotype)
+            final Genotype normalGenotype = new GenotypeBuilder(normalSample, homRefAllelesforNormalGenotype)
                     .AD(Arrays.stream(normalAlleleCounts).mapToInt(x -> (int) FastMath.round(x)).toArray())
                     .attribute(GATKVCFConstants.ALLELE_FRACTION_KEY, getAltAlleleFractions(normalAlleleCounts))
                     .make();
