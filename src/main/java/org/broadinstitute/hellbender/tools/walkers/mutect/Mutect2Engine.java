@@ -140,7 +140,7 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         if (hasNormal()) {
             headerInfo.add(new VCFHeaderLine(NORMAL_SAMPLE_KEY_IN_VCF_HEADER, normalSampleName));
         }
-        
+
         final VCFHeader vcfHeader = new VCFHeader(headerInfo, samplesList.asListOfSamples());
         vcfHeader.setSequenceDictionary(header.getSequenceDictionary());
         vcfWriter.writeHeader(vcfHeader);
@@ -180,17 +180,8 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         readLikelihoods.changeReads(readRealignments);
 
         final HaplotypeCallerGenotypingEngine.CalledHaplotypes calledHaplotypes = genotypingEngine.callMutations(
-                readLikelihoods,
-                assemblyResult,
-                referenceContext,
-                regionForGenotyping.getSpan(),
-                featureContext,
-                givenAlleles,
-                header);
-
+                readLikelihoods, assemblyResult, referenceContext, regionForGenotyping.getSpan(), featureContext, givenAlleles, header);
         writeBamOutput(assemblyResult, readLikelihoods, calledHaplotypes);
-
-        if( MTAC.debug) { logger.info("----------------------------------------------------------------------------------"); }
         return calledHaplotypes.getCalls();
     }
 
