@@ -71,7 +71,7 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     private VariantAnnotatorEngine annotationEngine;
     private final SmithWatermanAligner aligner;
     private AssemblyRegionTrimmer trimmer = new AssemblyRegionTrimmer();
-    
+
     /**
      * Create and initialize a new HaplotypeCallerEngine given a collection of HaplotypeCaller arguments, a reads header,
      * and a reference file
@@ -120,51 +120,30 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
 
     public void writeHeader(final VariantContextWriter vcfWriter, final Set<VCFHeaderLine> defaultToolHeaderLines) {
         final Set<VCFHeaderLine> headerInfo = new HashSet<>();
+        headerInfo.add(new VCFHeaderLine("Mutect Version", MUTECT_VERSION));
         headerInfo.add(new VCFHeaderLine(Mutect2FilteringEngine.FILTERING_STATUS_VCF_KEY, "Warning: unfiltered Mutect 2 calls.  Please run " + FilterMutectCalls.class.getSimpleName() + " to remove false positives."));
-
-        // all annotation fields from VariantAnnotatorEngine
         headerInfo.addAll(annotationEngine.getVCFAnnotationDescriptions(false));
         headerInfo.addAll(defaultToolHeaderLines);
+        GATKVCFConstants.STANDARD_MUTECT_INFO_FIELDS.stream().map(GATKVCFHeaderLines::getInfoLine).forEach(headerInfo::add);
 
-        // all callers need to add these standard FORMAT field header lines
         VCFStandardHeaderLines.addStandardFormatLines(headerInfo, true,
                 VCFConstants.GENOTYPE_KEY,
                 VCFConstants.GENOTYPE_ALLELE_DEPTHS,
                 VCFConstants.GENOTYPE_QUALITY_KEY,
                 VCFConstants.DEPTH_KEY,
                 VCFConstants.GENOTYPE_PL_KEY);
+        headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.ALLELE_FRACTION_KEY));
+        headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_ID_KEY));
+        headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_GT_KEY));
 
-        headerInfo.addAll(getM2HeaderLines());
-        headerInfo.addAll(getSampleHeaderLines());
-
+        headerInfo.add(new VCFHeaderLine(TUMOR_SAMPLE_KEY_IN_VCF_HEADER, tumorSampleName));
+        if (hasNormal()) {
+            headerInfo.add(new VCFHeaderLine(NORMAL_SAMPLE_KEY_IN_VCF_HEADER, normalSampleName));
+        }
+        
         final VCFHeader vcfHeader = new VCFHeader(headerInfo, samplesList.asListOfSamples());
         vcfHeader.setSequenceDictionary(header.getSequenceDictionary());
         vcfWriter.writeHeader(vcfHeader);
-    }
-
-    private Set<VCFHeaderLine> getM2HeaderLines(){
-        final Set<VCFHeaderLine> headerInfo = new HashSet<>();
-
-        headerInfo.add(new VCFHeaderLine("Mutect Version", MUTECT_VERSION));
-
-        GATKVCFConstants.STANDARD_MUTECT_INFO_FIELDS.stream().map(GATKVCFHeaderLines::getInfoLine).forEach(headerInfo::add);
-
-        headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.ALLELE_FRACTION_KEY));
-
-        if ( ! MTAC.doNotRunPhysicalPhasing ) {
-            headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_ID_KEY));
-            headerInfo.add(GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_GT_KEY));
-        }
-        return headerInfo;
-    }
-
-    private Set<VCFHeaderLine> getSampleHeaderLines(){
-        final Set<VCFHeaderLine> sampleLines = new HashSet<>();
-        if (hasNormal()) {
-            sampleLines.add(new VCFHeaderLine(NORMAL_SAMPLE_KEY_IN_VCF_HEADER, normalSampleName));
-        }
-        sampleLines.add(new VCFHeaderLine(TUMOR_SAMPLE_KEY_IN_VCF_HEADER, tumorSampleName));
-        return sampleLines;
     }
 
     public List<VariantContext> callRegion(final AssemblyRegion originalAssemblyRegion, final ReferenceContext referenceContext, final FeatureContext featureContext ) {
