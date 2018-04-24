@@ -8,10 +8,7 @@ import org.apache.commons.math3.util.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.engine.*;
-import org.broadinstitute.hellbender.engine.filters.MappingQualityReadFilter;
-import org.broadinstitute.hellbender.engine.filters.ReadFilter;
-import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
-import org.broadinstitute.hellbender.engine.filters.WellformedReadFilter;
+import org.broadinstitute.hellbender.engine.filters.*;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotatorEngine;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.GenotypingGivenAllelesUtils;
@@ -55,7 +52,6 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     public static final double MAX_ALT_FRACTION_IN_NORMAL = 0.3;
     public static final int MAX_NORMAL_QUAL_SUM = 100;
 
-
     private M2ArgumentCollection MTAC;
     private SAMFileHeader header;
 
@@ -64,6 +60,8 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     public static final int MINIMUM_BASE_QUALITY = 6;   // for active region determination
 
     private final SampleList samplesList;
+    private final String tumorSampleName;
+    private final String normalSampleName;
 
     private CachingIndexedFastaSequenceFile referenceReader;
     private ReadThreadingAssembler assemblyEngine;
@@ -72,20 +70,8 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     private Optional<HaplotypeBAMWriter> haplotypeBAMWriter;
     private VariantAnnotatorEngine annotationEngine;
     private final SmithWatermanAligner aligner;
-
-    private final String tumorSampleName;
-    private final String normalSampleName;
-
     private AssemblyRegionTrimmer trimmer = new AssemblyRegionTrimmer();
-
-    private static ReadFilter GOOD_READ_LENGTH_FILTER = new ReadFilter() {
-        private static final long serialVersionUID = 985763L;
-        @Override
-        public boolean test(final GATKRead read) {
-            return read.getLength() >= MIN_READ_LENGTH;
-        }
-    };
-
+    
     /**
      * Create and initialize a new HaplotypeCallerEngine given a collection of HaplotypeCaller arguments, a reads header,
      * and a reference file
@@ -117,25 +103,19 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
                 MTAC.genotypingOutputMode == GenotypingOutputMode.GENOTYPE_GIVEN_ALLELES, false);
     }
 
-    /**
-     * @return the default set of read filters for use with Mutect2
-     */
+    //default M2 read filters.  Cheap ones come first in order to fail fast.
     public static List<ReadFilter> makeStandardMutect2ReadFilters() {
-        // The order in which we apply filters is important. Cheap filters come first so we fail fast
-        List<ReadFilter> filters = new ArrayList<>();
-        filters.add(new MappingQualityReadFilter(READ_QUALITY_FILTER_THRESHOLD));
-        filters.add(ReadFilterLibrary.MAPPING_QUALITY_AVAILABLE);
-        filters.add(ReadFilterLibrary.MAPPING_QUALITY_NOT_ZERO);
-        filters.add(ReadFilterLibrary.MAPPED);
-        filters.add(ReadFilterLibrary.NOT_SECONDARY_ALIGNMENT);
-        filters.add(ReadFilterLibrary.NOT_DUPLICATE);
-        filters.add(ReadFilterLibrary.PASSES_VENDOR_QUALITY_CHECK);
-        filters.add(ReadFilterLibrary.NON_ZERO_REFERENCE_LENGTH_ALIGNMENT);
-        filters.add(GOOD_READ_LENGTH_FILTER);
-        filters.add(ReadFilterLibrary.GOOD_CIGAR);
-        filters.add(new WellformedReadFilter());
-
-        return filters;
+        return Arrays.asList(new MappingQualityReadFilter(READ_QUALITY_FILTER_THRESHOLD),
+                ReadFilterLibrary.MAPPING_QUALITY_AVAILABLE,
+                ReadFilterLibrary.MAPPING_QUALITY_NOT_ZERO,
+                ReadFilterLibrary.MAPPED,
+                ReadFilterLibrary.NOT_SECONDARY_ALIGNMENT,
+                ReadFilterLibrary.NOT_DUPLICATE,
+                ReadFilterLibrary.PASSES_VENDOR_QUALITY_CHECK,
+                ReadFilterLibrary.NON_ZERO_REFERENCE_LENGTH_ALIGNMENT,
+                new ReadLengthReadFilter(MIN_READ_LENGTH, Integer.MAX_VALUE),
+                ReadFilterLibrary.GOOD_CIGAR,
+                new WellformedReadFilter());
     }
 
     public void writeHeader(final VariantContextWriter vcfWriter, final Set<VCFHeaderLine> defaultToolHeaderLines) {
