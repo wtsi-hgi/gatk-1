@@ -85,9 +85,9 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
             final FeatureContext featureContext,
             final List<VariantContext> givenAlleles,
             final SAMFileHeader header) {
-        Utils.nonNull(log10ReadLikelihoods, "likelihoods are null");
+        Utils.nonNull(log10ReadLikelihoods);
         Utils.validateArg(log10ReadLikelihoods.numberOfSamples() > 0, "likelihoods have no samples");
-        Utils.nonNull(activeRegionWindow, "activeRegionWindow is null");
+        Utils.nonNull(activeRegionWindow);
         Utils.validateArg(log10ReadLikelihoods.samples().contains(tumorSample), "readLikelihoods does not contain the tumor sample ");
 
         final List<Haplotype> haplotypes = log10ReadLikelihoods.alleles();
@@ -111,9 +111,9 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
             if( mergedVC == null ) {
                 continue;
             }
-            final Map<Allele, List<Haplotype>> alleleMapper = createAlleleMapper(eventsAtThisLoc, mergedVC, loc, haplotypes);
 
-            // converting ReadLikelihoods<Haplotype> to ReadLikeliHoods<Allele>
+            // converting ReadLikelihoods<Haplotype> to ReadLikelihoods<Allele>
+            final Map<Allele, List<Haplotype>> alleleMapper = createAlleleMapper(eventsAtThisLoc, mergedVC, loc, haplotypes);
             final ReadLikelihoods<Allele> log10Likelihoods = log10ReadLikelihoods.marginalize(alleleMapper,
                     new SimpleInterval(mergedVC).expandWithinContig(ALLELE_EXTENSION, header.getSequenceDictionary()));
             filterOverlappingReads(log10Likelihoods, mergedVC.getReference(), loc, false);
@@ -126,15 +126,7 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
             final Optional<PerAlleleCollection<Double>> normalLog10Odds = getForNormal(() -> diploidAltLog10Odds(log10NormalMatrix.get()));
             final Optional<PerAlleleCollection<Double>> normalArtifactLog10Odds = getForNormal(() -> somaticLog10Odds(log10NormalMatrix.get()));
 
-            final List<Pair<Allele, Allele>> givenAltAndRefAllelesInOriginalContext =  getVCsAtThisLocation(Collections.emptyList(), loc, givenAlleles).stream()
-                    .flatMap(vc -> vc.getAlternateAlleles().stream().map(allele -> ImmutablePair.of(allele, vc.getReference()))).collect(Collectors.toList());
-
-            final Set<Allele> allelesConsistentWithGivenAlleles = mergedVC.getAlternateAlleles().stream()
-                    .map(allele -> ImmutablePair.of(allele, mergedVC.getReference()))
-                    .filter(altAndRef -> givenAltAndRefAllelesInOriginalContext.stream().anyMatch(givenAltAndRef -> allelesAreConsistent(givenAltAndRef, altAndRef)))
-                    .map(altAndRefPair -> altAndRefPair.getLeft())
-                    .collect(Collectors.toSet());
-
+            final Set<Allele> allelesConsistentWithGivenAlleles = getAllelesConsistentWithGivenAlleles(givenAlleles, loc, mergedVC);
             final List<Allele> somaticAltAlleles = mergedVC.getAlternateAlleles().stream()
                     .filter(allele -> allelesConsistentWithGivenAlleles.contains(allele) ||
                             ((tumorLog10Odds.getAlt(allele) > MTAC.emissionLodThreshold) &&
@@ -149,11 +141,11 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
             final Optional<LikelihoodMatrix<Allele>> subsettedLog10NormalMatrix =
                     getForNormal(() -> new SubsettedLikelihoodMatrix<>(log10NormalMatrix.get(), allSomaticAlleles));
 
-            final Map<String, Object> populationAlleleFreqeuncyAnnotation = GermlineProbabilityCalculator.getPopulationAlleleFrequencyAnnotation(featureContext.getValues(MTAC.germlineResource, loc), somaticAltAlleles, MTAC.getDefaultAlleleFrequency());
+            final Map<String, Object> populationAFAnnotation = GermlineProbabilityCalculator.getPopulationAFAnnotation(featureContext.getValues(MTAC.germlineResource, loc), somaticAltAlleles, MTAC.getDefaultAlleleFrequency());
 
             final VariantContextBuilder callVcb = new VariantContextBuilder(mergedVC)
                     .alleles(allSomaticAlleles)
-                    .attributes(populationAlleleFreqeuncyAnnotation)
+                    .attributes(populationAFAnnotation)
                     .attribute(GATKVCFConstants.TUMOR_LOD_KEY, somaticAltAlleles.stream().mapToDouble(tumorLog10Odds::getAlt).toArray());
 
             normalLog10Odds.ifPresent(values -> callVcb.attribute(GATKVCFConstants.NORMAL_LOD_KEY, values.asDoubleArray(somaticAltAlleles)));
@@ -184,6 +176,17 @@ public class SomaticGenotypingEngine extends AssemblyBasedCallerGenotypingEngine
                 .map(vc -> new VariantContextBuilder(vc).attribute(GATKVCFConstants.EVENT_COUNT_IN_HAPLOTYPE_KEY, eventCount).make())
                 .collect(Collectors.toList());
         return new CalledHaplotypes(outputCallsWithEventCountAnnotation, calledHaplotypes);
+    }
+
+    private Set<Allele> getAllelesConsistentWithGivenAlleles(List<VariantContext> givenAlleles, int loc, VariantContext mergedVC) {
+        final List<Pair<Allele, Allele>> givenAltAndRefAllelesInOriginalContext =  getVCsAtThisLocation(Collections.emptyList(), loc, givenAlleles).stream()
+                .flatMap(vc -> vc.getAlternateAlleles().stream().map(allele -> ImmutablePair.of(allele, vc.getReference()))).collect(Collectors.toList());
+
+        return mergedVC.getAlternateAlleles().stream()
+                .map(allele -> ImmutablePair.of(allele, mergedVC.getReference()))
+                .filter(altAndRef -> givenAltAndRefAllelesInOriginalContext.stream().anyMatch(givenAltAndRef -> allelesAreConsistent(givenAltAndRef, altAndRef)))
+                .map(altAndRefPair -> altAndRefPair.getLeft())
+                .collect(Collectors.toSet());
     }
 
     // check whether two alleles coming from different variant contexts and with possibly different reference alleles
