@@ -131,10 +131,6 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
 
         trimmer.initialize(MTAC.assemblyRegionTrimmerArgs, header.getSequenceDictionary(), MTAC.debug,
                 MTAC.genotypingOutputMode == GenotypingOutputMode.GENOTYPE_GIVEN_ALLELES, false);
-
-        if( MTAC.CONTAMINATION_FRACTION_FILE != null ) {
-            MTAC.setSampleContamination(AlleleBiasedDownsamplingUtils.loadContaminationFile(MTAC.CONTAMINATION_FRACTION_FILE, MTAC.CONTAMINATION_FRACTION, samplesList.asSetOfSamples(), logger));
-        }
     }
 
     /**
