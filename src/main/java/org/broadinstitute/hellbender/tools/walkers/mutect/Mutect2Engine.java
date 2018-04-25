@@ -21,6 +21,7 @@ import org.broadinstitute.hellbender.utils.fasta.CachingIndexedFastaSequenceFile
 import org.broadinstitute.hellbender.utils.genotyper.IndexedSampleList;
 import org.broadinstitute.hellbender.utils.genotyper.ReadLikelihoods;
 import org.broadinstitute.hellbender.utils.genotyper.SampleList;
+import org.broadinstitute.hellbender.utils.haplotype.EventMap;
 import org.broadinstitute.hellbender.utils.haplotype.Haplotype;
 import org.broadinstitute.hellbender.utils.haplotype.HaplotypeBAMWriter;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
@@ -177,7 +178,8 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
 
         final ReadLikelihoods<Haplotype> readLikelihoods = likelihoodCalculationEngine.computeReadLikelihoods(assemblyResult,samplesList,reads);
 
-
+        //TODO: this is just for testing
+        //final List<Collection<VariantContext>> hapEvents = readLikelihoods.alleles().stream().map(h -> new EventMap(h, assemblyResult.getFullReferenceWithPadding(), assemblyResult.getPaddedReferenceLoc(), "NAME")).map(em -> em.getVariantContexts()).collect(Collectors.toList());
         final Set<Haplotype> haplotypesToKeep = SomaticLikelihoodsEngine.allelesToKeep(readLikelihoods.sampleMatrix(readLikelihoods.indexOfSample(tumorSample)), MTAC.haplotypeLodThreshold, MTAC.minHaplotypeCount);
         readLikelihoods.marginalize(haplotypesToKeep.stream().collect(Collectors.toMap(h -> h, h -> Arrays.asList(h))));
 

@@ -99,7 +99,7 @@ public class SomaticLikelihoodsEngine {
     }
 
     public static <A extends Allele> double log10Evidence(final LikelihoodMatrix<A> log10Matrix) {
-        return log10Evidence(getAsRealMatrix(log10Matrix));
+        return log10Matrix.numberOfReads() == 0 ? 0 : log10Evidence(getAsRealMatrix(log10Matrix));
     }
 
     private static double xLog10x(final double x) {
@@ -144,12 +144,11 @@ public class SomaticLikelihoodsEngine {
             if (allelesToKeep.size() <= minAllelesToKeep) {
                 continue;
             }
-            allelesToKeep.remove(allele);
-            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = new SubsettedLikelihoodMatrix(log10Matrix, new ArrayList<>(allelesToKeep));
+            final List<A> allelesWithoutThisOne = allelesToKeep.stream().filter(a -> a != allele).collect(Collectors.toList());
+            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = new SubsettedLikelihoodMatrix<A>(log10Matrix, allelesWithoutThisOne);
             final double log10EvidenceWithoutAllele = log10Evidence(log10MatrixWithoutThisAllele);
-            if (log10Evidence - log10EvidenceWithoutAllele > log10DifferenceThreshold) {
-                allelesToKeep.add(allele);
-            } else {
+            if (log10Evidence - log10EvidenceWithoutAllele < log10DifferenceThreshold) {
+                allelesToKeep.remove(allele);
                 log10Evidence = log10EvidenceWithoutAllele;
             }
         }
