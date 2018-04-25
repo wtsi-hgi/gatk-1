@@ -26,8 +26,8 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
     public static final String GERMLINE_RESOURCE_LONG_NAME = "germline-resource";
     public static final String DEFAULT_AF_LONG_NAME = "af-of-alleles-not-in-resource";
     public static final String DEFAULT_AF_SHORT_NAME = "default-af";
-    public static final String EMISSION_LOG_LONG_NAME = "tumor-lod-to-emit";
-    public static final String EMISSION_LOG_SHORT_NAME = "emit-lod";
+    public static final String EMISSION_LOD_LONG_NAME = "tumor-lod-to-emit";
+    public static final String EMISSION_LOD_SHORT_NAME = "emit-lod";
     public static final String INITIAL_TUMOR_LOD_LONG_NAME = "initial-tumor-lod";
     public static final String INITIAL_TUMOR_LOD_SHORT_NAME = "init-lod";
     public static final String MAX_POPULATION_AF_LONG_NAME = "max-population-af";
@@ -103,7 +103,7 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
      * Default setting of 3 is permissive and will emit some amount of negative training data that 
      * {@link FilterMutectCalls} should then filter.
      */
-    @Argument(fullName = EMISSION_LOG_LONG_NAME, shortName = EMISSION_LOG_SHORT_NAME, optional = true, doc = "LOD threshold to emit tumor variant to VCF.")
+    @Argument(fullName = EMISSION_LOD_LONG_NAME, shortName = EMISSION_LOD_SHORT_NAME, optional = true, doc = "LOD threshold to emit tumor variant to VCF.")
     public double emissionLodThreshold = 3.0;
 
     /**
