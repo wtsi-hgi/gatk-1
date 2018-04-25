@@ -176,6 +176,12 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         final Map<String,List<GATKRead>> reads = splitReadsBySample( regionForGenotyping.getReads() );
 
         final ReadLikelihoods<Haplotype> readLikelihoods = likelihoodCalculationEngine.computeReadLikelihoods(assemblyResult,samplesList,reads);
+
+
+        final Set<Haplotype> haplotypesToKeep = SomaticLikelihoodsEngine.allelesToKeep(readLikelihoods.sampleMatrix(readLikelihoods.indexOfSample(tumorSample)), MTAC.haplotypeLodThreshold, MTAC.minHaplotypeCount);
+        readLikelihoods.marginalize(haplotypesToKeep.stream().collect(Collectors.toMap(h -> h, h -> Arrays.asList(h))));
+
+
         final Map<GATKRead,GATKRead> readRealignments = AssemblyBasedCallerUtils.realignReadsToTheirBestHaplotype(readLikelihoods, assemblyResult.getReferenceHaplotype(), assemblyResult.getPaddedReferenceLoc(), aligner);
         readLikelihoods.changeReads(readRealignments);
 

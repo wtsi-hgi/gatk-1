@@ -98,7 +98,7 @@ public class SomaticLikelihoodsEngine {
         return log10Evidence(log10Likelihoods, flatPrior);
     }
 
-    public static double log10Evidence(final LikelihoodMatrix<Allele> log10Matrix) {
+    public static <A extends Allele> double log10Evidence(final LikelihoodMatrix<A> log10Matrix) {
         return log10Evidence(getAsRealMatrix(log10Matrix));
     }
 
@@ -114,15 +114,15 @@ public class SomaticLikelihoodsEngine {
 
     // compute the likelihoods that each allele is contained at some allele fraction in the sample
     // using a leave-one-out score ie the log odds of every allele versus every allele but one
-    public static PerAlleleCollection<Double> somaticLog10Odds(final LikelihoodMatrix<Allele> log10Matrix) {
+    public static <A extends Allele> PerAlleleCollection<Double> somaticLog10Odds(final LikelihoodMatrix<A> log10Matrix) {
         final double log10EvidenceWithAllAlleles = log10Matrix.numberOfReads() == 0 ? 0 :
                 log10Evidence(log10Matrix);
 
         final PerAlleleCollection<Double> lods = new PerAlleleCollection<>(PerAlleleCollection.Type.ALT_ONLY);
         final int refIndex = SomaticGenotypingEngine.getRefIndex(log10Matrix);
         IntStream.range(0, log10Matrix.numberOfAlleles()).filter(a -> a != refIndex).forEach(a -> {
-            final Allele allele = log10Matrix.getAllele(a);
-            final LikelihoodMatrix<Allele> log10MatrixWithoutThisAllele = SubsettedLikelihoodMatrix.excludingAllele(log10Matrix, allele);
+            final A allele = log10Matrix.getAllele(a);
+            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = SubsettedLikelihoodMatrix.excludingAllele(log10Matrix, allele);
             final double log10EvidenceWithoutThisAllele = log10MatrixWithoutThisAllele.numberOfReads() == 0 ? 0 :
                     log10Evidence(log10MatrixWithoutThisAllele);
             lods.setAlt(allele, log10EvidenceWithAllAlleles - log10EvidenceWithoutThisAllele);
@@ -130,22 +130,22 @@ public class SomaticLikelihoodsEngine {
         return lods;
     }
 
-    public static Set<Allele> allelesToKeep(final LikelihoodMatrix<Allele> log10Matrix, final double log10DifferenceThreshold, final int minAllelesToKeep) {
-        final Set<Allele> allelesToKeep = new HashSet<>(log10Matrix.alleles());
-        
+    public  static <A extends Allele> Set<A> allelesToKeep(final LikelihoodMatrix<A> log10Matrix, final double log10DifferenceThreshold, final int minAllelesToKeep) {
+        final Set<A> allelesToKeep = new HashSet<>(log10Matrix.alleles());
+
         // we try to drop each allele cumulatively, starting with the least likely
         // we get the order of alleles to attempt to drop from the leave-one-out log odds
         final PerAlleleCollection<Double> leaveOneOutLods = somaticLog10Odds(log10Matrix);
-        final List<Allele> orderOfAllelesToTest = log10Matrix.alleles().stream().filter(Allele::isNonReference)
+        final List<A> orderOfAllelesToTest = log10Matrix.alleles().stream().filter(Allele::isNonReference)
                 .sorted(Comparator.comparingDouble(leaveOneOutLods::get)).collect(Collectors.toList());
 
         double log10Evidence = log10Evidence(log10Matrix);
-        for (final Allele allele : orderOfAllelesToTest) {
+        for (final A allele : orderOfAllelesToTest) {
             if (allelesToKeep.size() <= minAllelesToKeep) {
                 continue;
             }
             allelesToKeep.remove(allele);
-            final LikelihoodMatrix<Allele> log10MatrixWithoutThisAllele = new SubsettedLikelihoodMatrix(log10Matrix, new ArrayList<>(allelesToKeep));
+            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = new SubsettedLikelihoodMatrix(log10Matrix, new ArrayList<>(allelesToKeep));
             final double log10EvidenceWithoutAllele = log10Evidence(log10MatrixWithoutThisAllele);
             if (log10Evidence - log10EvidenceWithoutAllele > log10DifferenceThreshold) {
                 allelesToKeep.add(allele);

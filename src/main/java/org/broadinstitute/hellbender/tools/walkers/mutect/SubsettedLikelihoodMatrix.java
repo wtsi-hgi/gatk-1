@@ -33,7 +33,7 @@ public class SubsettedLikelihoodMatrix<A extends Allele> implements LikelihoodMa
         newToOldIndexMap = new Int2IntArrayMap(newIndices, oldIndices);
     }
 
-    public static <A extends Allele> SubsettedLikelihoodMatrix<A> excludingAllele(final LikelihoodMatrix<A> matrix, final Allele excludedAllele) {
+    public static <A extends Allele> SubsettedLikelihoodMatrix<A> excludingAllele(final LikelihoodMatrix<A> matrix, final A excludedAllele) {
         final List<A> alleles = matrix.alleles().stream().filter(a -> !a.basesMatch(excludedAllele)).collect(Collectors.toList());
         Utils.validateArg(alleles.size() == matrix.numberOfAlleles() - 1, "More than one allele excluded.");
         return new SubsettedLikelihoodMatrix<A>(matrix, alleles);

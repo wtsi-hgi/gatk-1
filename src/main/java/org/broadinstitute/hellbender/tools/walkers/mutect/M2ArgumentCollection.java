@@ -28,6 +28,8 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
     public static final String DEFAULT_AF_SHORT_NAME = "default-af";
     public static final String EMISSION_LOD_LONG_NAME = "tumor-lod-to-emit";
     public static final String EMISSION_LOD_SHORT_NAME = "emit-lod";
+    public static final String HAPLOTYPE_LOD_LONG_NAME = "haplotype-lod";
+    public static final String MIN_NUMBER_OF_HAPLOTYPES_LONG_NAME = "min-haplotypes";
     public static final String INITIAL_TUMOR_LOD_LONG_NAME = "initial-tumor-lod";
     public static final String INITIAL_TUMOR_LOD_SHORT_NAME = "init-lod";
     public static final String MAX_POPULATION_AF_LONG_NAME = "max-population-af";
@@ -40,6 +42,7 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
 
     public static final double DEFAULT_AF_FOR_TUMOR_ONLY_CALLING = 5e-8;
     public static final double DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING = 1e-5;
+    public static final int DEFAULT_MIN_HAPLOTYPE_COUNT = 3;
 
     //TODO: HACK ALERT HACK ALERT HACK ALERT
     //TODO: GATK4 does not yet have a way to tag inputs, eg -I:tumor tumor.bam -I:normal normal.bam,
@@ -105,6 +108,18 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
      */
     @Argument(fullName = EMISSION_LOD_LONG_NAME, shortName = EMISSION_LOD_SHORT_NAME, optional = true, doc = "LOD threshold to emit tumor variant to VCF.")
     public double emissionLodThreshold = 3.0;
+
+    /**
+     * TODO: put in documentation
+     */
+    @Argument(fullName = HAPLOTYPE_LOD_LONG_NAME, optional = true, doc = "LOD threshold for haplotypes")
+    public double haplotypeLodThreshold = Double.NEGATIVE_INFINITY;
+
+    /**
+     * TODO: put in documentation
+     */
+    @Argument(fullName = MIN_NUMBER_OF_HAPLOTYPES_LONG_NAME, optional = true, doc = "Minimum number of haplotypes.")
+    public int minHaplotypeCount = DEFAULT_MIN_HAPLOTYPE_COUNT;
 
     /**
      * Only variants with estimated tumor LODs exceeding this threshold will be considered active.
