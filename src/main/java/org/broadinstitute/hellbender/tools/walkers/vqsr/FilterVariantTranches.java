@@ -82,6 +82,9 @@ public class FilterVariantTranches extends TwoPassVariantWalker {
     @Argument(fullName = "info-key", shortName = "info-key", doc = "The key must be in the INFO field of the input VCF.")
     private String infoKey = GATKVCFConstants.CNN_2D_KEY;
 
+    @Argument(fullName = "keep-old-filters", shortName = "keep-old-filters", doc = "Keeps filters already in the VCF.", optional=true)
+    private boolean keepOldFilters = false;
+
     private VariantContextWriter vcfWriter;
     private List<Double> snpScores = new ArrayList<>();
     private List<Double> snpCutoffs = new ArrayList<>();
@@ -155,7 +158,9 @@ public class FilterVariantTranches extends TwoPassVariantWalker {
     @Override
     protected void secondPassApply(VariantContext variant, ReadsContext readsContext, ReferenceContext referenceContext, FeatureContext featureContext) {
         final VariantContextBuilder builder = new VariantContextBuilder(variant);
-
+        if (!keepOldFilters) {
+            builder.unfiltered();
+        }
         if (variant.hasAttribute(infoKey)) {
             final double score = Double.parseDouble((String) variant.getAttribute(infoKey));
             if (variant.isSNP() && isTrancheFiltered(score, snpCutoffs)) {
@@ -183,8 +188,12 @@ public class FilterVariantTranches extends TwoPassVariantWalker {
     private void writeVCFHeader(VariantContextWriter vcfWriter) {
         // setup the header fields
         final VCFHeader inputHeader = getHeaderForVariants();
-        final Set<VCFHeaderLine> inputHeaders = inputHeader.getMetaDataInSortedOrder();
-        final Set<VCFHeaderLine> hInfo = new HashSet<>(inputHeaders);
+        Set<VCFHeaderLine> hInfo = new LinkedHashSet<VCFHeaderLine>();
+        hInfo.addAll(inputHeader.getMetaDataInSortedOrder());
+
+        if (!keepOldFilters){
+            hInfo.removeIf(x -> x instanceof VCFFilterHeaderLine);
+        }
 
         if( tranches.size() >= 2 ) {
             for(int i = 0; i < tranches.size() - 1; i++) {
@@ -196,6 +205,7 @@ public class FilterVariantTranches extends TwoPassVariantWalker {
         String filterKey = filterKeyFromTranches(infoKey, tranches.get(tranches.size()-1), 100.0);
         String filterDescription = filterDescriptionFromTranches(infoKey, tranches.get(tranches.size()-1), 100.0);
         hInfo.add(new VCFFilterHeaderLine(filterKey, filterDescription));
+
         final TreeSet<String> samples = new TreeSet<>();
         samples.addAll(inputHeader.getGenotypeSamples());
         hInfo.addAll(getDefaultToolVCFHeaderLines());
