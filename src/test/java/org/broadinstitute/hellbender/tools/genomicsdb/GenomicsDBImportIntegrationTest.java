@@ -64,6 +64,7 @@ public final class GenomicsDBImportIntegrationTest extends CommandLineProgramTes
 
     private static final String SAMPLE_NAME_KEY = "SN";
     private static final String ANOTHER_ATTRIBUTE_KEY = "AA";
+    private static final List<String> ATTRIBUTES_TO_IGNORE = Arrays.asList("RAW_MQ","RAW_MQandDP");
 
     @Override
     public String getTestedClassName() {
@@ -292,7 +293,7 @@ public final class GenomicsDBImportIntegrationTest extends CommandLineProgramTes
                             .map(g -> g.getGenotypeString().equals(".")?new GenotypeBuilder(g).alleles(GATKVariantContextUtils.noCallAlleles(2)).make():g)
                             .collect(Collectors.toList());
                     a = new VariantContextBuilder(a).genotypes(genotypes).make();
-                    VariantContextTestUtils.assertVariantContextsAreEqualAlleleOrderIndependent(a, e, Collections.emptyList(), VCF_HEADER);
+                    VariantContextTestUtils.assertVariantContextsAreEqualAlleleOrderIndependent(a, e, ATTRIBUTES_TO_IGNORE, VCF_HEADER);
 
                     // Test only that the genotypes match
                 } else {
