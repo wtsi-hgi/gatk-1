@@ -68,7 +68,7 @@ public final class CountVariantsSparkIntegrationTest extends CommandLineProgramT
         ArgumentsBuilder args = new ArgumentsBuilder();
         args.addVCF(fileIn);
         args.add(intervalArgs);
-        args.addReference(new File(largeFileTestDir, "human_g1k_v37.20.21.fasta"));
+        args.addReference(new File(largeFileTestDir, "human_g1k_v37.20.21.fasta.gz"));
         args.addOutput(outputTxt);
         this.runCommandLine(args.getArgsArray());
 

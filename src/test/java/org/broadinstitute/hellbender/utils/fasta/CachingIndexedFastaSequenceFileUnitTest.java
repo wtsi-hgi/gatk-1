@@ -9,6 +9,8 @@ import htsjdk.samtools.reference.IndexedFastaSequenceFile;
 import htsjdk.samtools.reference.ReferenceSequence;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+
+import htsjdk.samtools.reference.ReferenceSequenceFile;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Level;
 import org.broadinstitute.hellbender.exceptions.UserException;
@@ -161,9 +163,9 @@ public final class CachingIndexedFastaSequenceFileUnitTest extends GATKBaseTest 
         Assert.assertTrue(nMixedCase > 0, "No mixed cases sequences found in file.  Unexpected test state");
     }
 
-    private int testCases(final IndexedFastaSequenceFile original,
-                          final IndexedFastaSequenceFile casePreserving,
-                          final IndexedFastaSequenceFile allUpper,
+    private int testCases(final ReferenceSequenceFile original,
+                          final ReferenceSequenceFile casePreserving,
+                          final ReferenceSequenceFile allUpper,
                           final String contig, final int start, final int stop ) {
         final String orig = fetchBaseString(original, contig, start, stop);
         final String keptCase = fetchBaseString(casePreserving, contig, start, stop);
@@ -179,7 +181,7 @@ public final class CachingIndexedFastaSequenceFileUnitTest extends GATKBaseTest 
         }
     }
 
-    private String fetchBaseString(final IndexedFastaSequenceFile reader, final String contig, final int start, final int stop) {
+    private String fetchBaseString(final ReferenceSequenceFile reader, final String contig, final int start, final int stop) {
         if ( start == -1 )
             return new String(reader.getSequence(contig).getBases());
         else

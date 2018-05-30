@@ -80,7 +80,7 @@ public class ReadWalkerGCSSupportIntegrationTest extends CommandLineProgramTest 
         final String[] args = new String[] {
             "ExampleReadWalkerWithReference",
             "-I", getGCPTestInputPath() + "large/CEUTrio.HiSeq.WGS.b37.NA12878.20.21.bam",
-            "-R", getGCPTestInputPath() + "large/human_g1k_v37.20.21.fasta",
+            "-R", getGCPTestInputPath() + "large/human_g1k_v37.20.21.fasta.gz",
             "-L", getGCPTestInputPath() + "large/CEUTrio.HiSeq.WGS.b37.NA12878.20.21.smallIntervalList.intervals",
             "-O", output.getAbsolutePath()
         };

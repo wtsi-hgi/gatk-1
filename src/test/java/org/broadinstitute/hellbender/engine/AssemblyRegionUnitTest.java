@@ -2,6 +2,7 @@ package org.broadinstitute.hellbender.engine;
 
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.reference.IndexedFastaSequenceFile;
+import htsjdk.samtools.reference.ReferenceSequenceFile;
 import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.activityprofile.ActivityProfileState;
@@ -20,7 +21,7 @@ import java.util.*;
 
 
 public final class AssemblyRegionUnitTest extends GATKBaseTest {
-    private IndexedFastaSequenceFile seq;
+    private ReferenceSequenceFile seq;
     private String contig;
     private int contigLength;
     private SAMFileHeader header;

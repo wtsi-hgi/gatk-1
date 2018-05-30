@@ -5,6 +5,7 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.reference.IndexedFastaSequenceFile;
+import htsjdk.samtools.reference.ReferenceSequenceFile;
 import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.VariantContextBuilder;
@@ -36,7 +37,7 @@ public final class ReadThreadingAssemblerUnitTest extends GATKBaseTest {
 
     private static final boolean DEBUG = false;
 
-    private IndexedFastaSequenceFile seq;
+    private ReferenceSequenceFile seq;
     private SAMFileHeader header;
 
     @BeforeClass

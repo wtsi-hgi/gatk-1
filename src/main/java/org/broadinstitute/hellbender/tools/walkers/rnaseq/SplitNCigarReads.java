@@ -2,6 +2,7 @@ package org.broadinstitute.hellbender.tools.walkers.rnaseq;
 
 import htsjdk.samtools.*;
 import htsjdk.samtools.reference.IndexedFastaSequenceFile;
+import htsjdk.samtools.reference.ReferenceSequenceFile;
 import org.broadinstitute.barclay.argparser.Advanced;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
@@ -128,7 +129,7 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
 
     private SAMFileGATKReadWriter outputWriter;
     private OverhangFixingManager overhangManager;
-    private IndexedFastaSequenceFile referenceReader;
+    private ReferenceSequenceFile referenceReader;
     SAMFileHeader header;
 
     @Override

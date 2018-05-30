@@ -24,7 +24,7 @@ public final class GcsNioIntegrationTest extends GATKBaseTest {
 
     final String privateFilePath = "org/broadinstitute/hellbender/utils/nio/private_file.txt";
     final String privateFilePath2 = "org/broadinstitute/hellbender/utils/nio/private_file_2.txt";
-    final String largeFilePath = "large/human_g1k_v37.20.21.fasta";
+    final String largeFilePath = "large/human_g1k_v37.20.21.fasta.gz";
 
     @Test(groups={"bucket"})
     public void testGcsEnabled() {

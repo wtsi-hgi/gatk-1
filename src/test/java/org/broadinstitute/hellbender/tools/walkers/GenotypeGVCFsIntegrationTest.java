@@ -45,7 +45,7 @@ public class GenotypeGVCFsIntegrationTest extends CommandLineProgramTest {
 
     private static final List<String> NO_EXTRA_ARGS = Collections.emptyList();
      private static final String BASE_PAIR_EXPECTED = "gvcf.basepairResolution.gatk3.7_30_ga4f720357.output.vcf";
-    private static final String b38_reference_20_21 = largeFileTestDir + "Homo_sapiens_assembly38.20.21.fasta";
+    private static final String b38_reference_20_21 = largeFileTestDir + "Homo_sapiens_assembly38.20.21.fasta.gz";
     private static final String BASE_PAIR_GVCF = "gvcf.basepairResolution.gvcf";
 
     private static final File CEUTRIO_20_21_GATK3_4_G_VCF = new File(largeFileTestDir, "gvcfs/CEUTrio.20.21.gatk3.4.g.vcf");

@@ -1,11 +1,9 @@
 package org.broadinstitute.hellbender.utils.fasta;
 
 import htsjdk.samtools.SAMException;
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
-import htsjdk.samtools.reference.FastaSequenceIndex;
-import htsjdk.samtools.reference.IndexedFastaSequenceFile;
-import htsjdk.samtools.reference.ReferenceSequence;
-import htsjdk.samtools.reference.ReferenceSequenceFileFactory;
+import htsjdk.samtools.reference.*;
 import htsjdk.samtools.util.IOUtil;
 import htsjdk.samtools.util.StringUtil;
 import org.apache.logging.log4j.Level;
@@ -16,6 +14,7 @@ import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.utils.BaseUtils;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -26,8 +25,10 @@ import java.util.Arrays;
  * Automatically upper-cases the bases coming in, unless the flag preserveCase is explicitly set.
  * Automatically converts IUPAC bases to Ns, unless the flag preserveIUPAC is explicitly set.
  */
-public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceFile {
+public final class CachingIndexedFastaSequenceFile implements ReferenceSequenceFile {
     protected static final Logger logger = LogManager.getLogger(CachingIndexedFastaSequenceFile.class);
+
+    private final ReferenceSequenceFile sequenceFile;
 
     /** do we want to print debugging information about cache efficiency? */
     private static final boolean PRINT_EFFICIENCY = false;
@@ -76,7 +77,7 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
      * @param preserveIUPAC If true, we will keep the IUPAC bases in the FASTA, otherwise they are converted to Ns
      */
     public CachingIndexedFastaSequenceFile(final Path fasta, final FastaSequenceIndex index, final long cacheSize, final boolean preserveCase, final boolean preserveIUPAC) {
-        super(fasta, index);
+        sequenceFile = getIndexedFasta(fasta, index);
         if ( cacheSize < 0 ) throw new IllegalArgumentException("cacheSize must be > 0");
         this.cacheSize = cacheSize;
         this.cacheMissBackup = Math.max(cacheSize / 1000, 1);
@@ -95,12 +96,22 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
      * @param preserveCase If true, we will keep the case of the underlying bases in the FASTA, otherwise everything is converted to upper case
      */
     public CachingIndexedFastaSequenceFile(final Path fasta, final long cacheSize, final boolean preserveCase, final boolean  preserveIUPAC) throws FileNotFoundException {
-        super(fasta);
+        sequenceFile = getIndexedFasta(fasta, null);
         if ( cacheSize < 0 ) throw new IllegalArgumentException("cacheSize must be > 0");
         this.cacheSize = cacheSize;
         this.cacheMissBackup = Math.max(cacheSize / 1000, 1);
         this.preserveCase = preserveCase;
         this.preserveIUPAC = preserveIUPAC;
+    }
+
+    private static ReferenceSequenceFile getIndexedFasta(Path fasta, FastaSequenceIndex index){
+        final ReferenceSequenceFile referenceSequenceFile = ReferenceSequenceFileFactory.getReferenceSequenceFile(fasta,
+                                                                                                                  true,
+                                                                                                                  true);
+        if( !referenceSequenceFile.isIndexed()) {
+            throw new UserException("Couldn't create indexed fasta: " + fasta.toAbsolutePath());
+        }
+        return referenceSequenceFile;
     }
 
     /**
@@ -152,10 +163,10 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
             throw new UserException.MissingReference("The specified fasta file (" + fastaPath.toUri() + ") does not exist.");
         }
 
-        final boolean isGzipped = fastaPath.toString().endsWith(".gz");
-        if ( isGzipped ) {
-            throw new UserException.CannotHandleGzippedRef();
-        }
+//        final boolean isGzipped = fastaPath.toString().endsWith(".gz");
+//        if ( isGzipped ) {
+//            throw new UserException.CannotHandleGzippedRef();
+//        }
 
         final Path indexPath = IOUtil.addExtension(fastaPath, ".fai");
 
@@ -271,6 +282,31 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
         return preserveCase;
     }
 
+    @Override
+    public SAMSequenceDictionary getSequenceDictionary() {
+        return sequenceFile.getSequenceDictionary();
+    }
+
+    @Override
+    public ReferenceSequence nextSequence() {
+        return sequenceFile.nextSequence();
+    }
+
+    @Override
+    public void reset() {
+        sequenceFile.nextSequence();
+    }
+
+    @Override
+    public boolean isIndexed() {
+        return true;
+    }
+
+    @Override
+    public ReferenceSequence getSequence(String contig) {
+        return sequenceFile.getSequence(contig);
+    }
+
     /**
      * Gets the subsequence of the contig in the range [start,stop]
      *
@@ -289,14 +325,14 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
 
         if ( (stop - start) >= cacheSize ) {
             cacheMisses++;
-            result = super.getSubsequenceAt(contig, start, stop);
+            result = sequenceFile.getSubsequenceAt(contig, start, stop);
             if ( ! preserveCase ) StringUtil.toUpperCase(result.getBases());
             if ( ! preserveIUPAC ) BaseUtils.convertIUPACtoN(result.getBases(), true, start < 1);
         } else {
             // todo -- potential optimization is to check if contig.name == contig, as this in general will be true
-            SAMSequenceRecord contigInfo = super.getSequenceDictionary().getSequence(contig);
+            SAMSequenceRecord contigInfo = sequenceFile.getSequenceDictionary().getSequence(contig);
             if (contigInfo == null){
-                throw new UserException.MissingContigInSequenceDictionary(contig, super.getSequenceDictionary());
+                throw new UserException.MissingContigInSequenceDictionary(contig, sequenceFile.getSequenceDictionary());
             }
 
             if (stop > contigInfo.getSequenceLength())
@@ -306,7 +342,7 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
                 cacheMisses++;
                 cache.start = Math.max(start - cacheMissBackup, 0);
                 cache.stop  = Math.min(start + cacheSize + cacheMissBackup, contigInfo.getSequenceLength());
-                cache.seq   = super.getSubsequenceAt(contig, cache.start, cache.stop);
+                cache.seq   = sequenceFile.getSubsequenceAt(contig, cache.start, cache.stop);
 
                 // convert all of the bases in the sequence to upper case if we aren't preserving cases
                 if ( ! preserveCase ) StringUtil.toUpperCase(cache.seq.getBases());
@@ -332,5 +368,10 @@ public final class CachingIndexedFastaSequenceFile extends IndexedFastaSequenceF
             printEfficiency(Level.INFO);
 
         return result;
+    }
+
+    @Override
+    public void close() throws IOException {
+
     }
 }

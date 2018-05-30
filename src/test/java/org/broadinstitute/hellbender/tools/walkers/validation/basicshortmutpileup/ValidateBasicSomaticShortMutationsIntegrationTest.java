@@ -24,7 +24,7 @@ public class ValidateBasicSomaticShortMutationsIntegrationTest extends CommandLi
     private static final String TEST_DREAM_NORMAL_BAM_INDEL_TEST = TEST_DREAM_BAM_DIR + "normal_3.bam";
     private static final String TEST_DREAM_TUMOR_BAM_INDEL_TEST = TEST_DREAM_BAM_DIR + "tumor_3.bam";
     private static final String TEST_DREAM_VCF_INDEL_TEST = toolsTestDir + "/walkers/validation/basicshortmutpileup/IS3.snv.indel.sv-vs-G15512.prenormal.sorted.vcf";
-    private static final String REFERENCE = largeFileTestDir + "human_g1k_v37.20.21.fasta";
+    private static final String REFERENCE = largeFileTestDir + "human_g1k_v37.20.21.fasta.gz";
 
     @Test
     public void testBasic() {
