@@ -15,7 +15,6 @@ import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscovery
 import org.broadinstitute.hellbender.tools.spark.sv.utils.*;
 import org.broadinstitute.hellbender.tools.spark.utils.IntHistogram;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
-import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 
@@ -76,7 +75,7 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
         rawFeatureCache = new HashMap<>();
 
         listItr = null;
-        treeItr = evidenceOverlapChecker.getTreeItr();
+        treeItr = evidenceOverlapChecker.getTreeIterator();
     }
 
     private static Map<String, Integer> evidenceTypeOrderToImmutableMap(final List<String> evidenceTypeOrder) {
@@ -167,7 +166,8 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
         final CigarQualityInfo cigarQualityInfo = new CigarQualityInfo(evidence);
         final double evidenceType = evidenceTypeMap.get(evidence.getClass().getSimpleName());
         final double mappingQuality = (double)getMappingQuality(evidence);
-        final double templateSize = getTemplateSize(evidence);
+        // either templateSize is defined (for ReadEvidence) or readCount (for TemplateSizeAnomaly).
+        final double templateSizeOrReadCount = getTemplateSizeOrReadCount(evidence);
 
         // calculate these similar to BreakpointDensityFilter, but always calculate full totals, never end early.
         final CoverageScaledOverlapInfo individualOverlapInfo = getIndividualOverlapInfo(evidence);
@@ -179,7 +179,7 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
 
         return new EvidenceFeatures(
             new double[]{
-                cigarQualityInfo.basesMatched, cigarQualityInfo.referenceLength, evidenceType, mappingQuality, templateSize,
+                cigarQualityInfo.basesMatched, cigarQualityInfo.referenceLength, evidenceType, mappingQuality, templateSizeOrReadCount,
                 individualOverlapInfo.numOverlap, individualOverlapInfo.overlapMappingQuality,
                 individualOverlapInfo.meanOverlapMappingQuality, individualOverlapInfo.numCoherent,
                 individualOverlapInfo.coherentMappingQuality,
@@ -197,13 +197,15 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
         return evidence.getMappingQuality() == null ? 60: evidence.getMappingQuality();
     }
 
-    private double getTemplateSize(final BreakpointEvidence evidence) {
+    private double getTemplateSizeOrReadCount(final BreakpointEvidence evidence) {
         final Integer templateSize = evidence.getTemplateSize();
         if(templateSize == null) {
             // For TemplateSizeAnomaly, return readCount scaled by meanGenomeCoverage
             final Integer readCounts = evidence.getReadCount();
-            Utils.validateArg(readCounts != null,
-                    "templateSize feature is only defined for ReadEvidence and TemplateSizeAnomaly");
+            if(readCounts == null) {
+                throw new IllegalStateException("templateSizeOrReadCount feature is only defined for ReadEvidence and TemplateSizeAnomaly, not "
+                        + evidence.getClass().getName());
+            }
             return (double)(readCounts) / readMetadata.getCoverage();
 
         } else {
@@ -271,7 +273,8 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
         int overlapMappingQuality = 0;
         int numCoherent = 0;
         int coherentMappingQuality = 0;
-        for(final EvidenceOverlapChecker.OverlapAndCoherenceIterator overlapperItr = evidenceOverlapChecker.overlappersWithCoherence(evidence);
+        for(final EvidenceOverlapChecker.OverlapAndCoherenceIterator overlapperItr
+                = evidenceOverlapChecker.overlappersWithCoherence(evidence);
             overlapperItr.hasNext();) {
             final ImmutablePair<BreakpointEvidence, Boolean> itrResults = overlapperItr.next();
             final BreakpointEvidence overlapper = itrResults.left;
@@ -292,19 +295,8 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
                 new UnscaledOverlapInfo(numOverlap, numCoherent, overlapMappingQuality, coherentMappingQuality));
     }
 
-    private static <T> void addToTree( final SVIntervalTree<List<T>> tree,
-                                       final SVInterval interval,
-                                       final T value ) {
-        final SVIntervalTree.Entry<List<T>> entry = tree.find(interval);
-        if ( entry != null ) {
-            entry.getValue().add(value);
-        } else {
-            final List<T> valueList = new ArrayList<>(1);
-            valueList.add(value);
-            tree.put(interval, valueList);
-        }
-    }
 
+    /*
     private static class EvidenceOverlapChecker {
         private final SVIntervalTree<List<BreakpointEvidence>> evidenceTree;
         private final ReadMetadata readMetadata;
@@ -329,7 +321,7 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
             return new OverlapAndCoherenceIterator(evidence, evidenceTree, readMetadata, minEvidenceMapQ);
         }
 
-        private Iterator<SVIntervalTree.Entry<List<BreakpointEvidence>>> getTreeItr() {
+        private Iterator<SVIntervalTree.Entry<List<BreakpointEvidence>>> getTreeIterator() {
             return evidenceTree.iterator();
         }
 
@@ -365,12 +357,14 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
                 return listItr.next();
             }
         }
+        */
 
         /**
          * Implements iterator of BreakpointEvidence that overlaps a specified piece of evidence. Each call to next()
          * returns overlapping BreakpointEvidence paired with a Boolean that is true if the overlapper is also coherent
          * with the evidence.
          */
+        /*
         private static class OverlapAndCoherenceIterator implements Iterator<ImmutablePair<BreakpointEvidence, Boolean>> {
             private final ReadMetadata readMetadata;
             private final int minEvidenceMapQ;
@@ -432,6 +426,7 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
             }
         }
     }
+    */
 
     private static class UnscaledOverlapInfo {
         final int numOverlap;

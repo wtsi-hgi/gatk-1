@@ -12,15 +12,11 @@ import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.StrandedInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.TextMDCodec;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
-import scala.xml.Null;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static org.broadinstitute.hellbender.utils.Utils.validateArg;
 
 /**
  * Various types of read anomalies that provide evidence of genomic breakpoints.
