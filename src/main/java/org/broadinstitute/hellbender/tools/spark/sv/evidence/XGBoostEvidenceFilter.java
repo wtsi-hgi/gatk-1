@@ -32,11 +32,11 @@ import java.util.*;
 public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence> {
     private static final boolean USE_FAST_MATH_EXP = true;
 
-    private static final List<Class> DEFAULT_EVIDENCE_TYPE_ORDER = Arrays.asList(
+    private static final List<Class<?>> DEFAULT_EVIDENCE_TYPE_ORDER = Arrays.asList(
             TemplateSizeAnomaly.class, MateUnmapped.class, InterContigPair.class,
             SplitRead.class, LargeIndel.class, WeirdTemplateSize.class, SameStrandPair.class, OutiesPair.class
     );
-    private static final Map<Class, Integer> evidenceTypeMap = evidenceTypeOrderToImmutableMap(DEFAULT_EVIDENCE_TYPE_ORDER);
+    private static final Map<Class<?>, Integer> evidenceTypeMap = evidenceTypeOrderToImmutableMap(DEFAULT_EVIDENCE_TYPE_ORDER);
     private static final String DEFAULT_PREDICTOR_RESOURCE_PATH = "/large/sv_evidence_classifier.bin";
     private static final double DEFAULT_GOOD_GAP_OVERLAP = 0.0;
     private static final double DEFAULT_GOOD_MAPPABILITY = 1.0;
@@ -93,8 +93,8 @@ public final class XGBoostEvidenceFilter implements Iterator<BreakpointEvidence>
         treeItr = evidenceOverlapChecker.getTreeIterator();
     }
 
-    private static Map<Class, Integer> evidenceTypeOrderToImmutableMap(final List<Class> evidenceTypeOrder) {
-        final HashMap<Class, Integer> evidenceTypeMap = new HashMap<>();
+    private static Map<Class<?>, Integer> evidenceTypeOrderToImmutableMap(final List<Class<?>> evidenceTypeOrder) {
+        final HashMap<Class<?>, Integer> evidenceTypeMap = new HashMap<>();
         for(int index = 0; index < evidenceTypeOrder.size(); ++index) {
             evidenceTypeMap.put(evidenceTypeOrder.get(index), index);
         }
