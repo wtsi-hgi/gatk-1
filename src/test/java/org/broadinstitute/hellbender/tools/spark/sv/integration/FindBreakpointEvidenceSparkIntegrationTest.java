@@ -50,8 +50,8 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
                     " --breakpoint-intervals " + outputDir + "/intervals" +
                     " --fastq-dir "            + outputDir + "/fastq" +
                     " --target-link-file "      + outputDir + "/targetLinks.bedpe" +
-                    " --min-evidence-count " + 15 / bamCoverage +
-                    " --min-coherent-evidence-count " + 7 / bamCoverage +
+                    " --min-evidence-coverage-ratio " + 15 / bamCoverage +
+                    " --min-coherent-evidence-coverage-ratio " + 7 / bamCoverage +
                     " --sv-evidence-filter-type " + "DENSITY";
         }
 
