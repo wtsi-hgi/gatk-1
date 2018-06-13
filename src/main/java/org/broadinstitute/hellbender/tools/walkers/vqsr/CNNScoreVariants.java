@@ -198,6 +198,11 @@ public class CNNScoreVariants extends VariantWalker {
     }
 
     @Override
+    public boolean useReadCaching() {
+        return true;
+    }
+
+    @Override
     public boolean requiresReference() {
         return true;
     }
