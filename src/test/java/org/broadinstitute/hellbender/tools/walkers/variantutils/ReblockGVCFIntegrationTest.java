@@ -1,58 +1,83 @@
 package org.broadinstitute.hellbender.tools.walkers.variantutils;
 
-        import org.broadinstitute.hellbender.CommandLineProgramTest;
-        import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
-        import org.broadinstitute.hellbender.utils.test.IntegrationTestSpec;
-        import org.testng.annotations.Test;
+import htsjdk.variant.variantcontext.VariantContext;
+import org.broadinstitute.hellbender.CommandLineProgramTest;
+import org.broadinstitute.hellbender.GATKBaseTest;
+import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
+import org.broadinstitute.hellbender.engine.FeatureDataSource;
+import org.broadinstitute.hellbender.utils.IntervalUtils;
+import org.broadinstitute.hellbender.utils.SimpleInterval;
+import org.broadinstitute.hellbender.utils.test.ArgumentsBuilder;
+import org.broadinstitute.hellbender.utils.test.CommandLineProgramTester;
+import org.broadinstitute.hellbender.utils.test.IntegrationTestSpec;
+import org.broadinstitute.hellbender.utils.test.VariantContextTestUtils;
+import org.testng.annotations.Test;
 
-        import java.util.Arrays;
-        import java.util.Collections;
-
-        import static org.testng.Assert.*;
+import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
 
 /**
  * Created by gauthier on 10/2/17.
  */
 public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
-    //TODO: for the love of God do NOT commit the reference!  This is just to test that we can match the GATK3 results on chromosome 1
-    String b37KGReference = getToolTestDataDir() + "human_g1k_v37.fasta";
+
+    private static final String hg38_reference_20_21 = largeFileTestDir + "Homo_sapiens_assembly38.20.21.fasta";
+    private static final String b37_reference_20_21 = largeFileTestDir + "human_g1k_v37.20.21.fasta";
 
     @Test
     public void testJustOneSample() throws Exception {
         final IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-L 1:69485-69791 -O %s -R " + b37KGReference +
-                        " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf -RGQthreshold 20" +
+                "-L chr20:69485-69791 -O %s -R " + hg38_reference_20_21 +
+                        " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf -RGQ-threshold 20" +
                         " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false",
                 Arrays.asList(getToolTestDataDir() + "testJustOneSample.expected.g.vcf"));
         spec.executeTest("testJustOneSample", this);
     }
 
     @Test
-    //covers non-ref GT correction, but not non-ref AD when non-ref is not called
-    public void testProductionGVCF() throws Exception {
-        final IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-L 1:1-1000000 -O %s -R " + b37KGReference +
-                        " -V " + getToolTestDataDir() + "NA12878.prod.chr1snippet.g.vcf" +
-                        " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false" +
-                        " -RGQ-threshold 40",
-                Arrays.asList(getToolTestDataDir() + "testProductionGVCF.expected.g.vcf"));
-        spec.executeTest("testProductionGVCF", this);
+    public void testGVCFReblockingIsContiguous() throws Exception {
+        final File output = createTempFile("reblockedgvcf", ".vcf");
+        final File expected = new File(getToolTestDataDir() + "testProductionGVCF.expected.g.vcf");
+
+        final ArgumentsBuilder args = new ArgumentsBuilder();
+        args.addReference(new File(b37_reference_20_21))
+                .addArgument("V", getToolTestDataDir() + "NA12878.prod.chr20snippet.g.vcf")
+                .addArgument("RGQ-threshold", "20")
+                .addArgument("L", "20:60001-1000000")
+                .addOutput(output);
+        runCommandLine(args);
+
+        final CommandLineProgramTester validator = ValidateVariants.class::getSimpleName;
+        final ArgumentsBuilder args2 = new ArgumentsBuilder();
+        args2.addArgument("R", b37_reference_20_21);
+        args2.addArgument("V", output.getAbsolutePath());
+        args2.addArgument("L", IntervalUtils.locatableToString(new SimpleInterval("20:60001-1000000")));
+        args2.add("-gvcf");
+        validator.runCommandLine(args2);  //will throw a UserException if GVCF isn't contiguous
+
+        try (final FeatureDataSource<VariantContext> actualVcs = new FeatureDataSource<>(output);
+             final FeatureDataSource<VariantContext> expectedVcs = new FeatureDataSource<>(expected)) {
+            GATKBaseTest.assertCondition(actualVcs, expectedVcs,
+                    (a, e) -> VariantContextTestUtils.assertVariantContextsAreEqual(a, e,
+                            Collections.emptyList()));
+        }
     }
 
     @Test
     public void testOneSampleDropLows() throws Exception {
         final IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-dropLowQuals -L 1:69485-69791 -O %s -R " + b37KGReference +
+                "-drop-low-quals -L chr20:69485-69791 -O %s -R " + hg38_reference_20_21 +
                         " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf" +
                         " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false",
                 Arrays.asList(getToolTestDataDir() + "testOneSampleDropLows.expected.g.vcf"));
         spec.executeTest("testOneSampleDropLows", this);
     }
 
-    @Test
+    @Test  //covers non-ref AD and non-ref GT corrections
     public void testNonRefADCorrection() throws Exception {
         final IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-O %s -R " + b38_reference_20_21 +
+                "-O %s -R " + hg38_reference_20_21 +
                         " -V " + getToolTestDataDir() + "nonRefAD.g.vcf" +
                         " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false",
                 Arrays.asList(getToolTestDataDir() + "testNonRefADCorrection.expected.g.vcf"));

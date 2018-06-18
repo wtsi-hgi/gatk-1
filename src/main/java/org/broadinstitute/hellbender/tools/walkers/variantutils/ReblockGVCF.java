@@ -200,7 +200,7 @@ public class ReblockGVCF extends VariantWalker {
         logger.info("Notice that the -ploidy parameter is ignored in " + getClass().getSimpleName() + " tool as this is automatically determined by the input variant files");
     }
 
-    // get VariantContexts from input gVCFs, merge, and regenotype
+    // get VariantContexts from input gVCFs and regenotype
     public void apply(VariantContext variant, ReadsContext reads, ReferenceContext ref, FeatureContext features) {
         final VariantContext newVC = regenotypeVC(ref, variant);
         if (newVC != null) {
@@ -317,40 +317,41 @@ public class ReblockGVCF extends VariantWalker {
 
             boolean allelesNeedSubsetting = false;
             List<Allele> allelesToDrop = new ArrayList<>();
-            //only put in alleles that are called
-            for(final Allele currAlt : result.getAlternateAlleles()) {
-                boolean foundMatch = false;
-                for(final Allele gtAllele: result.getGenotype(0).getAlleles()) {
-                    if(gtAllele.equals(currAlt,false)) {
-                        foundMatch = true;
-                        break;
-                    }
-                    if(gtAllele.equals(Allele.NON_REF_ALLELE)){
-                        if(dropLowQuals) { //don't regenotype, just drop it -- this is a GQ 0 case if ever I saw one
-                            return null;
+            if (dropLowQuals) {
+                //only put in alleles that are called if we're dropping low quality variants (mostly because this can introduce GVCF gaps if deletion alleles are dropped)
+                for (final Allele currAlt : result.getAlternateAlleles()) {
+                    boolean foundMatch = false;
+                    for (final Allele gtAllele : result.getGenotype(0).getAlleles()) {
+                        if (gtAllele.equals(currAlt, false)) {
+                            foundMatch = true;
+                            break;
                         }
-                        else {
-                            //TODO: extract this method to a "make GQ0 ref"
-                            Allele newRef = result.getReference();
-                            Genotype g = result.getGenotype(0);
-                            GenotypeBuilder gb = new GenotypeBuilder(g);
-                            //NB: If we're dropping a deletion allele, then we need to trim the reference and add an END tag with the vc stop position
-                            if(result.getReference().length() > 1) {
-                                attrMap.put("END", result.getEnd());
-                                newRef = Allele.create(newRef.getBases()[0], true);
-                                gb.alleles(Arrays.asList(newRef, newRef));
+                        if (gtAllele.equals(Allele.NON_REF_ALLELE)) {
+                            if (dropLowQuals) { //don't regenotype, just drop it -- this is a GQ 0 case if ever I saw one
+                                return null;
+                            } else {
+                                //TODO: extract this method to a "make GQ0 ref"
+                                Allele newRef = result.getReference();
+                                Genotype g = result.getGenotype(0);
+                                GenotypeBuilder gb = new GenotypeBuilder(g);
+                                //NB: If we're dropping a deletion allele, then we need to trim the reference and add an END tag with the vc stop position
+                                if (result.getReference().length() > 1) {
+                                    attrMap.put("END", result.getEnd());
+                                    newRef = Allele.create(newRef.getBases()[0], true);
+                                    gb.alleles(Arrays.asList(newRef, newRef));
+                                }
+                                if (!isHomRefCall) {
+                                    gb.PL(new int[3]);  //3 for diploid PLs, automatically initializes to zero(?)
+                                    gb.GQ(0).noAD().alleles(Arrays.asList(newRef, newRef)).noAttributes();
+                                }
+                                return builder.alleles(Arrays.asList(newRef, Allele.NON_REF_ALLELE)).unfiltered().log10PError(VariantContext.NO_LOG10_PERROR).attributes(attrMap).genotypes(gb.make()).make();
                             }
-                            if (!isHomRefCall) {
-                                gb.PL(new int[3]);  //3 for diploid PLs, automatically initializes to zero(?)
-                                gb.GQ(0).noAD().alleles(Arrays.asList(newRef, newRef)).noAttributes();
-                            }
-                            return builder.alleles(Arrays.asList(newRef, Allele.NON_REF_ALLELE)).unfiltered().log10PError(VariantContext.NO_LOG10_PERROR).attributes(attrMap).genotypes(gb.make()).make();
                         }
                     }
-                }
-                if(!foundMatch && !currAlt.isSymbolic()) {
-                    allelesNeedSubsetting = true;
-                    allelesToDrop.add(currAlt);
+                    if (!foundMatch && !currAlt.isSymbolic()) {
+                        allelesNeedSubsetting = true;
+                        allelesToDrop.add(currAlt);
+                    }
                 }
             }
             //remove any AD reads for the non-ref
@@ -390,6 +391,7 @@ public class ReblockGVCF extends VariantWalker {
                 else {  //again, only initialize a builder if we have to
                     builder.genotypes(AlleleSubsettingUtils.subsetAlleles(newGenotypes, PLOIDY_TWO, result.getAlleles(), newAlleleSet, GenotypeAssignmentMethod.USE_PLS_TO_ASSIGN, result.getAttributeAsInt(VCFConstants.DEPTH_KEY, 0)));
                 }
+                //FIXME: how do we represent a dropped deletion without losing reference base coverage?
                 return GATKVariantContextUtils.reverseTrimAlleles(builder.attributes(attrMap).unfiltered().make());
             }
             return builder.attributes(attrMap).genotypes(newGenotypes).unfiltered().make();
