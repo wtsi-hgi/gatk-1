@@ -203,11 +203,11 @@ public class CNNScoreVariants extends VariantWalker {
     }
 
     @Override
-    protected VariantFilter makeVariantFilter(){
+    protected CountingVariantFilter makeVariantFilter(){
         if (filterSymbolicAndSV) {
-            return VariantFilterLibrary.NOT_SV_OR_SYMBOLIC;
+            return new CountingVariantFilter(VariantFilterLibrary.NOT_SV_OR_SYMBOLIC);
         } else {
-            return VariantFilterLibrary.ALLOW_ALL_VARIANTS;
+            return new CountingVariantFilter(VariantFilterLibrary.ALLOW_ALL_VARIANTS);
         }
     }
 
