@@ -71,6 +71,7 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
     }
 
     private static final List<Integer> standardPartition = ImmutableList.of(1, 10, 20);
+    private static final List<Integer> highConfLowConf = ImmutableList.of(20,100);
     private static final Allele REF = Allele.create("G", true);
     private static final Allele ALT = Allele.create("A");
     private static final List<Allele> ALLELES = ImmutableList.of(REF, Allele.NON_REF_ALLELE);
@@ -114,6 +115,17 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
     private static VariantContext makeHomRef(final String contig, final int start, final int GQ) {
         final VariantContextBuilder vcb = new VariantContextBuilder("test", contig, start, start, ALLELES);
         return makeVariantContext(vcb, Arrays.asList(REF, REF), GQ);
+    }
+
+    private VariantContext makeHomRef(final String contig, final int start, final int GQ, final int end) {
+        final VariantContextBuilder vcb = new VariantContextBuilder("test", contig, start, end, ALLELES);
+        final GenotypeBuilder gb = new GenotypeBuilder(SAMPLE_NAME, Arrays.asList(REF, REF));
+        gb.GQ(GQ);
+        gb.DP(10);
+        gb.AD(new int[]{1, 2});
+        gb.PL(new int[]{0, 10, 100});
+        vcb.attribute("END", end);
+        return vcb.genotypes(gb.make()).make();
     }
 
     private static VariantContext makeHomRefAlt(final int start) {
@@ -355,6 +367,18 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
         Assert.assertEquals(mockWriter.emitted.size(), 2);
         assertGoodVC(mockWriter.emitted.get(0), CHR1, 1, 2, false);
         assertGoodVC(mockWriter.emitted.get(1), CHR1, 10, 11, false);
+    }
+
+    @Test
+    public void testInputBlocks() {
+        final MockWriter mockWriter = new MockWriter();
+        final GVCFWriter writer = new GVCFWriter(mockWriter, highConfLowConf, HomoSapiensConstants.DEFAULT_PLOIDY);
+
+        writer.add(makeHomRef("20", 1, 16, 600));
+        writer.add(makeHomRef("20", 601, 0, 620));
+        writer.close();
+        Assert.assertEquals(mockWriter.emitted.size(), 1);
+        assertGoodVC(mockWriter.emitted.get(0), "20", 1, 620, false);
     }
 
     @Test

@@ -18,10 +18,7 @@ import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
 
 import javax.annotation.Nonnull;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.function.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -1345,9 +1342,12 @@ public final class MathUtils {
      * @param values a list of numbers
      * @return the median element of values
      */
-    public static <T extends Number & Comparable<T>> double median(final Collection<T> values) {
+    public static <T extends Comparable<? super T>> T median(final Collection<T> values) {
         Utils.nonEmpty(values, "cannot take the median of a collection with no values.");
-        return new Median().evaluate(values.stream().mapToDouble(Number::doubleValue).toArray());
+        //return new Median().evaluate(values.stream().mapToDouble(Number::doubleValue).toArray());
+        final ArrayList<T> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        return sorted.get(values.size() / 2);
     }
 
     /**
