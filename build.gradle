@@ -510,10 +510,16 @@ shadowJar {
 
 task localJar{ dependsOn shadowJar }
 
-task shadowTestJar(type: ShadowJar){
+task shadowTestClassJar(type: ShadowJar){
     group = "Shadow"
     from sourceSets.test.output
     classifier = "test"
+}
+
+task shadowTestJar(type: ShadowJar){
+    group = "Shadow"
+    configurations = [project.configurations.testRuntime]
+    classifier = "testDependencies"
 }
 
 task unpackJar(type: Copy){
