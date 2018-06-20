@@ -221,7 +221,9 @@ configurations {
         exclude module: 'spark-mllib_2.11'
         exclude group: 'org.scala-lang'
         exclude module: 'kryo'
+
     }
+
 }
 
 // Get the jdk files we need to run javaDoc. We need to use these during compile, testCompile,
@@ -507,6 +509,77 @@ shadowJar {
 }
 
 task localJar{ dependsOn shadowJar }
+
+task shadowTestJar(type: ShadowJar){
+    group = "Shadow"
+    from sourceSets.test.output
+    classifier = "test"
+}
+
+task unpackJar(type: Copy){
+    from zipTree("build/libs/gatk-package-4.0.5.1-18-g23496b4-SNAPSHOT-test.jar")
+    into "testClasses"
+}
+
+task testOnShadowJar(type: Test){
+    outputs.upToDateWhen { false }  //tests will never be "up to date" so you can always rerun them
+    String TEST_VERBOSITY = "$System.env.TEST_VERBOSITY"
+
+    /**
+     * Valid options for TEST_TYPE are:
+     * cloud, integration, unit  : run one of the three disjoint partitions of the test suite
+     * all                       : run all the tests
+     * anything else             : run the non-cloud tests
+     */
+    String TEST_TYPE = "$System.env.TEST_TYPE"
+
+    useTestNG {
+        if (TEST_TYPE == "cloud") {
+            // run only the cloud tests
+            includeGroups 'cloud', 'bucket'
+        } else if (TEST_TYPE == "integration"){
+            include "**/*IntegrationTest.class"
+            excludeGroups "cloud", "bucket", "python", "funcotatorValidation"
+        } else if (TEST_TYPE == "unit") {
+            exclude "**/*IntegrationTest.class"
+            excludeGroups "cloud", "bucket", "python", "funcotatorValidation"
+        } else if (TEST_TYPE == "spark") {
+            includeGroups "spark"
+            excludeGroups "cloud", "bucket", "python", "funcotatorValidation"
+        } else if (TEST_TYPE == "python") {
+            includeGroups "python"
+        } else if (TEST_TYPE == "all"){
+            //include everything
+        } else {
+            excludeGroups "cloud", "bucket", "python", "funcotatorValidation"
+        }
+    }
+
+    systemProperty "samjdk.use_async_io_read_samtools", "false"
+    systemProperty "samjdk.use_async_io_write_samtools", "true"
+    systemProperty "samjdk.use_async_io_write_tribble", "false"
+    systemProperty "samjdk.compression_level", "2"
+    systemProperty "gatk.spark.debug", System.getProperty("gatk.spark.debug")
+
+    environment "SPARK_LOCAL_IP","127.0.0.1"
+
+    // set heap size for the test JVM(s)
+    minHeapSize = "1G"
+    maxHeapSize = "4G"
+
+    testLogging.showStandardStreams = true
+    beforeTest { descriptor ->
+        logger.lifecycle("Running Test: " + descriptor)
+    }
+
+    // listen to standard out and standard error of the test JVM(s)
+    onOutput { descriptor, event ->
+        logger.lifecycle("Test: " + descriptor + " produced standard out/err: " + event.message )
+    }
+
+    testClassesDir = file("testClasses")
+    classpath = files("gatk-package-4.0.5.1-18-g23496b4-SNAPSHOT-test.jar", "build/libs/gatk-package-4.0.5.1-18-g23496b4-SNAPSHOT-test.jar")
+}
 
 task sparkJar(type: ShadowJar) {
     group = "Shadow"
