@@ -99,7 +99,7 @@ public final class QualByDepth extends InfoFieldAnnotation implements StandardAn
         }
     }
 
-    public static int getDepth(final GenotypesContext genotypes, final ReadLikelihoods likelihoods) {
+    public static int getDepth(final GenotypesContext genotypes, final ReadLikelihoods<Allele> likelihoods) {
         int depth = 0;
         int ADrestrictedDepth = 0;
 

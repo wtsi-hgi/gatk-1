@@ -156,7 +156,7 @@ public final class GVCFWriter implements VariantContextWriter {
 
         if (nextAvailableStart != -1) {
             //there's a use case here related to ReblockGVCFs for overlapping deletions on different haplotypes
-            if ( vc.getStart() <= nextAvailableStart && vc.getChr().equals(contigOfNextAvailableStart) ) {
+            if ( vc.getStart() <= nextAvailableStart && vc.getContig().equals(contigOfNextAvailableStart) ) {
                 if (vc.getEnd() <= nextAvailableStart)
                     return null;
             }
