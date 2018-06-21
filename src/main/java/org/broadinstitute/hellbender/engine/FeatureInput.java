@@ -236,6 +236,7 @@ public final class FeatureInput<T extends Feature> implements Serializable {
     /**
      * creates a name from the given filePath by finding the absolute path of the given input
      */
+    //TODO: this is redundant with BucketUtils.makeFilePathAbsolute(String)
     private static String makeIntoAbsolutePath(final String filePath){
         if(FeatureDataSource.isGenomicsDBPath(filePath)){
             return FeatureDataSource.GENOMIC_DB_URI_SCHEME + new File(filePath.replace(FeatureDataSource.GENOMIC_DB_URI_SCHEME,"")).getAbsolutePath();

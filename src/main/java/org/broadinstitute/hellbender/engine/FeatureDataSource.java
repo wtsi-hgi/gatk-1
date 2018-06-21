@@ -59,6 +59,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
 
     /**
      * identifies a path as a GenomicsDB URI
+     * TODO: we should change the name of this since the scheme name is actually just "gendb"
      */
     public static final String GENOMIC_DB_URI_SCHEME = "gendb://";
 
