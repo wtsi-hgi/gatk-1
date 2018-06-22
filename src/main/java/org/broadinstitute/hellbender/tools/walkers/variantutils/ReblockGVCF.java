@@ -120,11 +120,11 @@ public class ReblockGVCF extends VariantWalker {
     };
 
     @Advanced
-    @Argument(fullName="drop-low-qual-variants", shortName="drop-low-quals", doc="Exclude variants that don't meet the reference GQ threshold from the reblocked GVCF to save space")
+    @Argument(fullName="drop-low-qual-variants", shortName="drop-low-quals", doc="Exclude variants and homRef blocks that are GQ0 from the reblocked GVCF to save space")
     protected boolean dropLowQuals = false;
 
     @Advanced
-    @Argument(fullName="RGQ-threshold-to-drop", shortName="RGQ-threshold", doc="Reference genotype quality (PL[0]) value below which to drop variant sites from the GVCF")
+    @Argument(fullName="RGQ-threshold-to-drop", shortName="RGQ-threshold", doc="Reference genotype quality (PL[0]) value below which variant sites will be converted to GQ0 homRef calls")
     protected double RGQthreshold = 0.0;
 
     @Advanced
@@ -365,11 +365,11 @@ public class ReblockGVCF extends VariantWalker {
 
     //treat homRef "calls", i.e. annotated variants with non-symbolic alt alleles and homRef genotypes, differently from het/homVar calls or homRef blocks
     private boolean isHomRefCall(final VariantContext result) {
-        return result.getGenotype(0).getGQ() == 0;
+        return result.getGenotype(0).isHomRef() && result.getLog10PError() != VariantContext.NO_LOG10_PERROR;
     }
 
     private VariantContext processHomRefBlock(final VariantContext result) {
-        if (dropLowQuals && !isHomRefCall(result)) {
+        if (dropLowQuals && (result.getGenotype(0).getGQ() <= RGQthreshold || result.getGenotype(0).getGQ() == 0)) {
             return null;
         }
         else if (result.getGenotype(0).isCalled() && result.getGenotype(0).isHomRef()) {

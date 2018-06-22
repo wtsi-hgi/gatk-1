@@ -1342,12 +1342,9 @@ public final class MathUtils {
      * @param values a list of numbers
      * @return the median element of values
      */
-    public static <T extends Comparable<? super T>> T median(final Collection<T> values) {
+    public static <T extends Number & Comparable<T>> double median(final Collection<T> values) {
         Utils.nonEmpty(values, "cannot take the median of a collection with no values.");
-        //return new Median().evaluate(values.stream().mapToDouble(Number::doubleValue).toArray());
-        final ArrayList<T> sorted = new ArrayList<>(values);
-        Collections.sort(sorted);
-        return sorted.get(values.size() / 2);
+        return new Median().evaluate(values.stream().mapToDouble(Number::doubleValue).toArray());
     }
 
     /**

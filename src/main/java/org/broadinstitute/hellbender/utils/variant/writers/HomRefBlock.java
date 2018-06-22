@@ -169,7 +169,7 @@ final class HomRefBlock implements Locatable {
     /** Get the median DP observed within this band
      * If there are an even number of DPs recorded in this band the median is the mean of the two middle values */
     public int getMedianDP() {
-        return Math.round(MathUtils.median(DPs));
+        return (int) Math.round(MathUtils.median(DPs));
     }
 
     /** Get the min PLs observed within this band, can be null if no PLs have yet been observed */

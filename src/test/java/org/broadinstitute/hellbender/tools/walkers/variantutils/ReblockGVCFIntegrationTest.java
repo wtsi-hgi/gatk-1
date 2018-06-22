@@ -65,12 +65,12 @@ public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
     }
 
     @Test
-    public void testOneSampleDropLows() throws Exception {
+    public void testOneSampleAsForGnomAD() throws Exception {
         final IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-drop-low-quals -L chr20:69485-69791 -O %s -R " + hg38_reference_20_21 +
+                "-drop-low-quals -do-qual-approx -L chr20:69485-69791 -O %s -R " + hg38_reference_20_21 +
                         " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf" +
                         " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false",
-                Arrays.asList(getToolTestDataDir() + "testOneSampleDropLows.expected.g.vcf"));
+                Arrays.asList(getToolTestDataDir() + "testOneSampleAsForGnomAD.expected.g.vcf"));
         spec.executeTest("testOneSampleDropLows", this);
     }
 
