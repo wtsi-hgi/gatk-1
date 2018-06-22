@@ -1,12 +1,16 @@
 package org.broadinstitute.hellbender.tools.walkers.readorientation;
 
+import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.util.Histogram;
+import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.commons.lang3.tuple.Triple;
+import org.apache.commons.math3.linear.Array2DRowRealMatrix;
+import org.apache.commons.math3.linear.ArrayRealVector;
+import org.apache.commons.math3.linear.RealMatrix;
+import org.apache.commons.math3.linear.RealVector;
 import org.apache.commons.math3.util.MathArrays;
-import org.apache.commons.math3.util.Pair;
 import org.apache.logging.log4j.Logger;
-import org.broadinstitute.hellbender.utils.GATKProtectedMathUtils;
 import org.broadinstitute.hellbender.utils.MathUtils;
 import org.broadinstitute.hellbender.utils.Nucleotide;
 import org.broadinstitute.hellbender.utils.Utils;
@@ -15,14 +19,11 @@ import java.util.*;
 
 
 public class LearnReadOrientationModelEngine {
-
-    // When the increase in likelihood falls under this value, we call the algorithm converged
+    // We consider the likelihood converged to its maximum when the difference falls below this threshold
     private final double convergenceThreshold;
 
     // If the EM does not converge in a few steps we should suspect that something went wrong
     private final int maxEMIterations;
-
-    static final double EPSILON = 1e-3;
 
     private final String referenceContext;
 
@@ -36,20 +37,17 @@ public class LearnReadOrientationModelEngine {
 
     /**
      * N by K matrix of posterior probabilities of latent variable z, where N is the number of alt sites,
-     * evaluated at the current estimates of the mixture weights artifactPriors
+     * evaluated at the current estimates of the mixture weights
      */
-    private final double[][] altResponsibilities;
+    private final RealMatrix altResponsibilities;
 
-    /**
-     * Maps a (Depth, Alt allele, F1R2/F2R1) 3-tuple to the responsibilities, where the alt depth is 1
-     */
     private final Map<Triple<Integer, Nucleotide, ReadOrientation>, double[]> responsibilitiesOfAltDepth1Sites;
 
     /**
      * MAX_COVERAGE by K matrix of responsibilities of a ref site (i.e. ALT Depth = 0, ALT F1R2 = 0)
      * for ref sites with coverage 1, 2,..., maxDepth
      */
-    private final double[][] refResponsibilities;
+    private final RealMatrix refResponsibilities;
 
     private final int numAltExamples;
 
@@ -59,19 +57,46 @@ public class LearnReadOrientationModelEngine {
 
     // K-dimensional vector of effective sample counts for each class of z, weighted by the the altResponsibilities. For a fixed k,
     // we sum up the counts over all alleles. N_k in the docs.
-    private double[] effectiveCounts = new double[F1R2FilterConstants.NUM_STATES];
+    private RealVector effectiveCounts = new ArrayRealVector(F1R2FilterConstants.NUM_STATES);
 
     // K-dimensional vector of beta-binomial parameters alpha and beta for
     // the conditional distribution over the alt count m given artifact state z
-    private final static Map<ArtifactState, Pair<Double, Double>> alleleFractionPseudoCounts = getPseudoCountsForAlleleFraction();
+    private final static Map<ArtifactState, BetaDistributionShape> alleleFractionPseudoCounts = getPseudoCountsForAlleleFraction();
 
     // K-dimensional vector of beta-binomial parameters alpha and beta for
     // the conditional distribution over the alt F1R2 count x given alt count m
-    private final static Map<ArtifactState, Pair<Double, Double>> altF1R2FractionPseudoCounts = getPseudoCountsForAltF1R2Fraction();
+    private final static Map<ArtifactState, BetaDistributionShape> altF1R2FractionPseudoCounts = getPseudoCountsForAltF1R2Fraction();
 
-    private int numIterations = 0;
+    private final MutableInt numIterations = new MutableInt();
 
     private final Logger logger;
+
+    private int maxDepth;
+
+    // Fixed hyperparameters for betabinomials
+    private final static double ALT_PSEUDOCOUNT = 1.0;
+
+    private final static double REF_PSEUDOCOUNT = 9.0;
+
+    // for home ref sites assume Q35, but maintaining some width
+    private final static double PSEUDO_COUNT_OF_HOM_LIKELY = 10000.0;
+
+    private final static double PSEUDO_COUNT_OF_HOM_UNLIKELY = 3.0;
+
+    private final static double BALANCED_PSEUDOCOUNT = 5.0;
+
+    // These variables define the distribution of allele fraction in a somatic variant. It should be learned from
+    // the data in the future. In the meantime, one should tweak this by hand when e.g. applying the read orientation
+    // filter on low allele fraction samples such as the blood biopsy
+    private final static double PSEUDO_COUNT_OF_SOMATIC_ALT = 2.0;
+
+    private final static double PSEUDO_COUNT_OF_SOMATIC_REF = 5.0;
+
+    private final static double PSEUDO_COUNT_OF_LIKELY_OUTCOME = 100.0;
+
+    private final static double PSEUDO_COUNT_OF_RARE_OUTCOME = 1.0;
+
+    private final static double BALANCED_PRIOR = 10;
 
 
     /**
@@ -79,93 +104,80 @@ public class LearnReadOrientationModelEngine {
      */
     public LearnReadOrientationModelEngine(final Histogram<Integer> refHistogram, final List<Histogram<Integer>> altDepthOneHistograms,
                                            final List<AltSiteRecord> altDesignMatrixForContext,
-                                           final double convergenceThreshold, final int maxEMIterations, final Logger logger) {
-        Utils.nonNull(refHistogram);
-        Utils.nonNull(altDepthOneHistograms);
-        Utils.nonNull(altDesignMatrixForContext);
-
-        referenceContext = refHistogram.getValueLabel();
-        Utils.validateArg(referenceContext.length() == F1R2FilterConstants.REFERENCE_CONTEXT_SIZE,
+                                           final double convergenceThreshold, final int maxEMIterations,
+                                           final int maxDepth, final Logger logger) {
+        this.refHistogram = Utils.nonNull(refHistogram);
+        this.altDepthOneHistograms = Utils.nonNull(altDepthOneHistograms);
+        this.altDesignMatrix = Utils.nonNull(altDesignMatrixForContext);
+        this.referenceContext = refHistogram.getValueLabel();
+        Utils.validate(referenceContext.length() == F1R2FilterConstants.REFERENCE_CONTEXT_SIZE,
                 String.format("reference context must have length %d but got %s", F1R2FilterConstants.REFERENCE_CONTEXT_SIZE, referenceContext));
-        Utils.validateArg(F1R2FilterConstants.CANONICAL_KMERS.contains(referenceContext),
+        Utils.validate(F1R2FilterConstants.CANONICAL_KMERS.contains(referenceContext),
                 referenceContext + " is not in the set of canonical kmers");
-
-        this.refHistogram = refHistogram;
-        this.altDepthOneHistograms = altDepthOneHistograms;
-        this.altDesignMatrix = altDesignMatrixForContext;
         this.numAltExamples = altDesignMatrix.size() + altDepthOneHistograms.stream().mapToInt(h -> (int) h.getSumOfValues()).sum();
         this.numRefExamples = (int) refHistogram.getSumOfValues();
         this.numExamples = numAltExamples + numRefExamples;
 
         // Responsibilities of ref sites with equal depth are the same so we can compute it for each depth and
         // multiply by the number of counts for that depth
-        this.refResponsibilities = new double[F1R2FilterConstants.maxDepth][F1R2FilterConstants.NUM_STATES];
+        this.refResponsibilities = new Array2DRowRealMatrix(maxDepth, F1R2FilterConstants.NUM_STATES);
 
-        this.altResponsibilities = new double[altDesignMatrix.size()][F1R2FilterConstants.NUM_STATES];
+        this.altResponsibilities = new Array2DRowRealMatrix(altDesignMatrix.size(), F1R2FilterConstants.NUM_STATES);
 
         // Store responsibilities for each depth and the F1R2/F2R1 of the one alt read
         this.responsibilitiesOfAltDepth1Sites = new HashMap<>();
         this.refAllele = F1R2FilterUtils.getMiddleBase(referenceContext);
         this.convergenceThreshold = convergenceThreshold;
         this.maxEMIterations = maxEMIterations;
+        this.maxDepth = maxDepth;
         this.logger = logger;
     }
 
     // Learn the prior probabilities for the artifact states by the EM algorithm
     public ArtifactPrior learnPriorForArtifactStates() {
-        boolean converged = false;
-        double[] l2distancesOfParameters = new double[maxEMIterations];
-
         // Initialize the prior for artifact
         double[] statePrior = getFlatPrior(refAllele);
-        double[] oldStatePrior = getFlatPrior(refAllele);
+        double l2Distance;
 
-        while (!converged && numIterations < maxEMIterations) {
+        do {
+            final double[] oldStatePrior = Arrays.copyOf(statePrior, F1R2FilterConstants.NUM_STATES);
+
             // Responsibilities are updated by side effect to save space
             takeEstep(statePrior);
             statePrior = takeMstep();
-            Utils.validate(Math.abs(MathUtils.sum(statePrior) - 1.0) < EPSILON, "artifactPriors must be normalized");
 
             // TODO: make sure EM increases the likelihood
             // newLikelihood >= oldLikelihood : "M step must increase the likelihood";
-            final double l2Distance = MathArrays.distance(oldStatePrior, statePrior);
-            converged = l2Distance < convergenceThreshold;
+            l2Distance = MathArrays.distance(oldStatePrior, statePrior);
 
-            l2distancesOfParameters[numIterations] = l2Distance;
-            oldStatePrior = Arrays.copyOf(statePrior, F1R2FilterConstants.NUM_STATES);
+            numIterations.increment();
+        } while (l2Distance > convergenceThreshold && numIterations.intValue() < maxEMIterations);
 
-            numIterations++;
-        }
-
-        if (numIterations == maxEMIterations){
+        if (numIterations.intValue() == maxEMIterations){
             logger.info(String.format("Context %s: with %s ref and %s alt examples, EM failed to converge within %d steps",
                     referenceContext, numRefExamples, numAltExamples, maxEMIterations));
         } else {
             logger.info(String.format("Context %s: with %s ref and %s alt examples, EM converged in %d steps",
-                    referenceContext, numRefExamples, numAltExamples, numIterations));
+                    referenceContext, numRefExamples, numAltExamples, numIterations.intValue()));
         }
 
-        logger.info("Changes in L2 distance of artifactPriors between iterations: " + ArtifactPrior.doubleArrayToString(l2distancesOfParameters));
         return new ArtifactPrior(referenceContext, statePrior, numExamples, numAltExamples);
     }
 
     /**
-     * Given the current estimates of @{link artifactPriors}, compute the responsibilities, which is
-     * the posterior probabilities of artifact states, for each example
+     * Given the current estimates of artifact prior probabilities, compute the responsibilities, which are
+     * the posterior probabilities of artifact states, for each data point
      **/
-    private void takeEstep(double[] artifactPriors) {
+    private void takeEstep(final double[] artifactPriors) {
         /**
          * Compute the responsibilities of ref examples.
          * Given that for moderate to high depths we will always have P(HOM REF) = 1, this is largely overkill
          *
          * Ref sites with the same depth have the same alt and alt F1R2 depths (i.e. zero) so avoid repeated computations
          */
-        for (int i = 0; i < F1R2FilterConstants.maxDepth; i++) {
+        for (int i = 0; i < maxDepth; i++) {
             final int depth = i + 1;
-            final double[] log10UnnormalizedResponsibilities = computeLog10Responsibilities(refAllele, refAllele, 0, 0, depth, artifactPriors);
-            refResponsibilities[i] = MathUtils.normalizeFromLog10ToLinearSpace(log10UnnormalizedResponsibilities);
-            Utils.validate(Math.abs(MathUtils.sum(refResponsibilities[i]) - 1.0) < EPSILON,
-                    String.format("ref responsibility for depth = %d added up to %f", depth, MathUtils.sum(refResponsibilities[i])));
+            refResponsibilities.setRow(i, computeResponsibilities(refAllele, refAllele, 0, 0, depth, artifactPriors, false));
         }
 
         // Compute the responsibilities of alt sites
@@ -175,20 +187,13 @@ public class LearnReadOrientationModelEngine {
             final int altDepth = example.getAltCount();
             final int altF1R2 = example.getAltF1R2();
 
-            // K-dimensional array of one of the terms that comprises gamma*_{nk}
-            double[] log10UnnormalizedResponsibilities = computeLog10Responsibilities(refAllele, example.getAltAllele(), altDepth, altF1R2, depth, artifactPriors);
-
-            // Normalize responsibilities here because the M-step uses normalized responsibilities
-            altResponsibilities[n] = MathUtils.normalizeFromLog10ToLinearSpace(log10UnnormalizedResponsibilities);
-
-            Utils.validate(Math.abs(MathUtils.sum(altResponsibilities[n]) - 1.0) < EPSILON,
-                    String.format("responsibility for %dth example added up to %f", n, MathUtils.sumLog10(altResponsibilities[n])));
+            altResponsibilities.setRow(n, computeResponsibilities(refAllele, example.getAltAllele(), altDepth, altF1R2, depth, artifactPriors, false));
         }
 
-        // Compute the responsibilities of sites of ref sites (alt depth = 0) and alt sites with depth=1
-        for (int i = 0; i < F1R2FilterConstants.maxDepth; i++){
+        // Compute the responsibilities of alt sites with depth=1
+        for (int i = 0; i < maxDepth; i++){
             final int depth = i+1;
-            for (Nucleotide altAllele : F1R2FilterConstants.REGULAR_BASES){
+            for (Nucleotide altAllele : Nucleotide.REGULAR_BASES){
                 for (ReadOrientation orientation : ReadOrientation.values()){
                     if (altAllele == refAllele){
                         continue;
@@ -196,10 +201,8 @@ public class LearnReadOrientationModelEngine {
 
                     final int f1r2Depth = orientation == ReadOrientation.F1R2 ? 1 : 0;
 
-                    double[] log10UnnormalizedResponsibilities = computeLog10Responsibilities(
-                            refAllele, altAllele, 1, f1r2Depth, depth, artifactPriors);
                     final Triple<Integer, Nucleotide, ReadOrientation> key = createKey(depth, altAllele, orientation);
-                    responsibilitiesOfAltDepth1Sites.put(key, MathUtils.normalizeFromLog10ToLinearSpace(log10UnnormalizedResponsibilities));
+                    responsibilitiesOfAltDepth1Sites.put(key, computeResponsibilities(refAllele, altAllele, 1, f1r2Depth, depth, artifactPriors, false));
                 }
             }
         }
@@ -213,7 +216,7 @@ public class LearnReadOrientationModelEngine {
      */
     private double[] takeMstep() {
         // First we compute the effective counts of each state, N_k in the docs. We do this separately over alt and ref sites
-        final double[] effectiveAltCountsFromDesignMatrix = GATKProtectedMathUtils.sumArrayFunction(0, altDesignMatrix.size(), n -> altResponsibilities[n]);
+        final double[] effectiveAltCountsFromDesignMatrix = MathUtils.sumArrayFunction(0, altDesignMatrix.size(), n -> altResponsibilities.getRow(n));
         double[] effectiveAltCountsFromHistograms = new double[F1R2FilterConstants.NUM_STATES];
 
         for (Histogram<Integer> histogram : altDepthOneHistograms){
@@ -222,37 +225,31 @@ public class LearnReadOrientationModelEngine {
             final ReadOrientation orientation = triplet.getRight();
 
 
-            final double[] effectiveAltCountsFromHistogram = GATKProtectedMathUtils.sumArrayFunction(0, F1R2FilterConstants.maxDepth,
+            final double[] effectiveAltCountsFromHistogram = MathUtils.sumArrayFunction(0, maxDepth,
                     i -> MathArrays.scale(histogram.get(i + 1).getValue(), responsibilitiesOfAltDepth1Sites.get(createKey(i+1, altAllele, orientation))));
             effectiveAltCountsFromHistograms = MathArrays.ebeAdd(effectiveAltCountsFromHistograms, effectiveAltCountsFromHistogram);
         }
 
         final double[] effectiveAltCounts = MathArrays.ebeAdd(effectiveAltCountsFromDesignMatrix, effectiveAltCountsFromHistograms);
 
-        Utils.validate(Math.abs(MathUtils.sum(effectiveAltCounts) - numAltExamples) < EPSILON,
-                String.format("effective alt counts must add up to %d but got %f", numAltExamples, MathUtils.sum(effectiveAltCounts)));
-
         // TODO: at some depth, the responsibilities must be 1 for z = HOM_REF and 0 for everything else, we could probably save some time there
         // Over ref sites, we have a histogram of sites over different depths. At each depth we simply multiply the responsibilities by the number of sites,
         // and sum them over all of depths. Because we cut off the depth histogram at {@code MAX_COVERAGE}, we underestimate the ref effective counts by design
-        final double[] effectiveRefCounts = GATKProtectedMathUtils.sumArrayFunction(0, F1R2FilterConstants.maxDepth,
-                i -> MathArrays.scale(refHistogram.get(i + 1).getValue(), refResponsibilities[i]));
+        final double[] effectiveRefCounts = MathUtils.sumArrayFunction(0, maxDepth,
+                i -> MathArrays.scale(refHistogram.get(i + 1).getValue(), refResponsibilities.getRow(i)));
 
-        Utils.validate(Math.abs(MathUtils.sum(effectiveRefCounts) - numRefExamples) < EPSILON,
-                String.format("effective ref counts must add up to %d but got %f", numRefExamples, MathUtils.sum(effectiveRefCounts)));
-
-        effectiveCounts = MathArrays.ebeAdd(effectiveAltCounts, effectiveRefCounts);
-        Utils.validate(Math.abs(MathUtils.sum(effectiveCounts) - numExamples) < EPSILON,
-                String.format("effective counts must add up to number of examples %d but got %f", numExamples, MathUtils.sum(effectiveCounts)));
-
-        return MathArrays.scale(1.0 / numExamples, effectiveCounts);
+        effectiveCounts = new ArrayRealVector(MathArrays.ebeAdd(effectiveAltCounts, effectiveRefCounts));
+        return effectiveCounts.mapMultiply(1.0/numExamples).toArray();
     }
 
-    public static double[] computeLog10Responsibilities(final Nucleotide refAllele, final Nucleotide altAllele,
-                                                        final int altDepth, final int f1r2AltCount, final int depth,
-                                                        final double[] artifactPrior) {
+    /**
+     * Return normalized probabilities
+     */
+    public static double[] computeResponsibilities(final Nucleotide refAllele, final Nucleotide altAllele,
+                                                   final int altDepth, final int f1r2AltCount, final int depth,
+                                                   final double[] artifactPrior, final boolean givenNotHomRef) {
         final double[] log10UnnormalizedResponsibilities = new double[F1R2FilterConstants.NUM_STATES];
-        List<ArtifactState> refToRefArtifacts = ArtifactState.getRefToRefArtifacts(refAllele);
+        final List<ArtifactState> refToRefArtifacts = ArtifactState.getRefToRefArtifacts(refAllele);
 
         for (ArtifactState state : ArtifactState.values()){
             final int stateIndex = state.ordinal();
@@ -262,7 +259,7 @@ public class LearnReadOrientationModelEngine {
                 continue;
             }
 
-            if (ArtifactState.artifactStates.contains(state) && ArtifactState.getAltAlleleOfArtifact(state) != altAllele) {
+            if (ArtifactState.artifactStates.contains(state) && state.getAltAlleleOfArtifact() != altAllele) {
                 // The indicator function is 0
                 log10UnnormalizedResponsibilities[stateIndex] = Double.NEGATIVE_INFINITY;
                 continue;
@@ -274,7 +271,11 @@ public class LearnReadOrientationModelEngine {
                     alleleFractionPseudoCounts.get(state), altF1R2FractionPseudoCounts.get(state));
         }
 
-        return log10UnnormalizedResponsibilities;
+        if (givenNotHomRef){
+            log10UnnormalizedResponsibilities[ArtifactState.HOM_REF.ordinal()] = Double.NEGATIVE_INFINITY;
+        }
+
+        return MathUtils.normalizeFromLog10ToLinearSpace(log10UnnormalizedResponsibilities);
     }
 
 
@@ -283,87 +284,68 @@ public class LearnReadOrientationModelEngine {
      * this method on inconsistent states e.g. z = F1R2_C where the reference context is ACT
      */
     private static double computePosterior(final int altDepth, final int altF1R2Depth, final int depth,
-                                           final double statePrior, final Pair<Double, Double> afPseudoCounts,
-                                           final Pair<Double, Double> f1r2PseudoCounts){
-        Utils.validateArg(MathUtils.isAProbability(statePrior), String.format("artifactPriors must be a probability but got %f", statePrior));
-        Utils.validateArg(afPseudoCounts.getFirst() > 0 && afPseudoCounts.getSecond() > 0,
-                String.format("pseudocounts for allele fraction must be greater than 0 but got %f and %f",
-                        afPseudoCounts.getFirst(), afPseudoCounts.getSecond()));
-        Utils.validateArg(f1r2PseudoCounts.getFirst() > 0 && f1r2PseudoCounts.getSecond() > 0,
-                String.format("pseudocounts for alt F1R2 fraction must be greater than 0 but got %f and %f",
-                        f1r2PseudoCounts.getFirst(), f1r2PseudoCounts.getSecond()));
+                                           final double statePrior, final BetaDistributionShape afPseudoCounts,
+                                           final BetaDistributionShape f1r2PseudoCounts){
+        Utils.validateArg(MathUtils.isAProbability(statePrior), String.format("statePrior must be a probability but got %f", statePrior));
 
         return Math.log10(statePrior) +
-                MathUtils.log10BetaBinomialProbability(altDepth, depth, afPseudoCounts.getFirst(), afPseudoCounts.getSecond()) +
-                MathUtils.log10BetaBinomialProbability(altF1R2Depth, altDepth, f1r2PseudoCounts.getFirst(), f1r2PseudoCounts.getSecond());
+                MathUtils.log10BetaBinomialProbability(altDepth, depth, afPseudoCounts.getAlpha(), afPseudoCounts.getBeta()) +
+                MathUtils.log10BetaBinomialProbability(altF1R2Depth, altDepth, f1r2PseudoCounts.getAlpha(), f1r2PseudoCounts.getBeta());
     }
 
     /**
      * For each state z, define allele fraction distribution f_z and alt f1r2 fraction theta_z
      * They are both beta binomial distributions and are therefore parameterized by the pseudocounts alpha and beta
      */
-    private static Map<ArtifactState, Pair<Double, Double>> getPseudoCountsForAlleleFraction(){
-        final Map<ArtifactState, Pair<Double, Double>> alleleFractionPseudoCounts = new HashMap<>(ArtifactState.values().length);
-
-        final double altPseudocount = 1.0;
-        final double refPseudocount = 9.0;
-
-        // for home ref sites assume Q35, but maintaining some width
-        final double pseudoCountOfHomLikely = 10000.0;
-        final double pseudoCountOfHomUnlikely = 3;
-
-        final double balancedPseudocount = 5;
-
-        // These variables define the distribution of allele fraction in a somatic variant. It should be learned from
-        // the data in the future. In the meantime, one should tweak this by hand when e.g. applying the read orientation
-        // filter on low allele fraction samples such as the blood biopsy
-        final double pseudoCountOfSomaticAlt = 2;
-        final double pseudoCountOfSomaticRef = 5;
+    private static Map<ArtifactState, BetaDistributionShape> getPseudoCountsForAlleleFraction(){
+        final Map<ArtifactState, BetaDistributionShape> alleleFractionPseudoCounts = new HashMap<>(ArtifactState.values().length);
 
         // The allele fraction distribution, which is not aware of the read orientation, should be the same between
         // F1R2 and F2R1 artifacts
-        ArtifactState.getF1R2ArtifactStates().forEach(s -> alleleFractionPseudoCounts.put(s, new Pair<>(altPseudocount, refPseudocount)));
-        ArtifactState.getF2R1ArtifactStates().forEach(s -> alleleFractionPseudoCounts.put(s, new Pair<>(altPseudocount, refPseudocount)));
+        ArtifactState.getF1R2ArtifactStates().forEach(s -> alleleFractionPseudoCounts.put(s, new BetaDistributionShape(ALT_PSEUDOCOUNT, REF_PSEUDOCOUNT)));
+        ArtifactState.getF2R1ArtifactStates().forEach(s -> alleleFractionPseudoCounts.put(s, new BetaDistributionShape(ALT_PSEUDOCOUNT, REF_PSEUDOCOUNT)));
 
+        alleleFractionPseudoCounts.put(ArtifactState.HOM_REF, new BetaDistributionShape(PSEUDO_COUNT_OF_HOM_UNLIKELY, PSEUDO_COUNT_OF_HOM_LIKELY));
+        alleleFractionPseudoCounts.put(ArtifactState.GERMLINE_HET, new BetaDistributionShape(BALANCED_PSEUDOCOUNT, BALANCED_PSEUDOCOUNT));
+        alleleFractionPseudoCounts.put(ArtifactState.SOMATIC_HET, new BetaDistributionShape(PSEUDO_COUNT_OF_SOMATIC_ALT, PSEUDO_COUNT_OF_SOMATIC_REF));
+        alleleFractionPseudoCounts.put(ArtifactState.HOM_VAR, new BetaDistributionShape(PSEUDO_COUNT_OF_HOM_LIKELY, PSEUDO_COUNT_OF_HOM_UNLIKELY));
 
-        for (ArtifactState z : ArtifactState.getNonArtifactStates()){
-            switch (z) {
-                case HOM_REF:
-                    alleleFractionPseudoCounts.put(z, new Pair<>(pseudoCountOfHomUnlikely, pseudoCountOfHomLikely));
-                    break;
-                case GERMLINE_HET:
-                    alleleFractionPseudoCounts.put(z, new Pair<>(balancedPseudocount, balancedPseudocount));
-                    break;
-                case SOMATIC_HET:
-                    alleleFractionPseudoCounts.put(z, new Pair<>(pseudoCountOfSomaticAlt, pseudoCountOfSomaticRef));
-                    break;
-                case HOM_VAR:
-                    alleleFractionPseudoCounts.put(z, new Pair<>(pseudoCountOfHomLikely, pseudoCountOfHomUnlikely));
-                    break;
-            }
-        }
         return alleleFractionPseudoCounts;
     }
 
-    private static Map<ArtifactState, Pair<Double, Double>> getPseudoCountsForAltF1R2Fraction(){
-        final Map<ArtifactState, Pair<Double, Double>> altF1R2FractionPseudoCounts = new HashMap<>(ArtifactState.values().length);
-        final double pseudoCountOfLikelyOutcome = 100.0;
-        final double pseudoCountOfRareOutcome = 1.0;
-        final double balancedPrior = 10;
+    private static Map<ArtifactState, BetaDistributionShape> getPseudoCountsForAltF1R2Fraction(){
+        final Map<ArtifactState, BetaDistributionShape> altF1R2FractionPseudoCounts = new HashMap<>(ArtifactState.values().length);
 
-        ArtifactState.getF1R2ArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new Pair<>(pseudoCountOfLikelyOutcome, pseudoCountOfRareOutcome)));
-        ArtifactState.getF2R1ArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new Pair<>(pseudoCountOfRareOutcome, pseudoCountOfLikelyOutcome)));
-        ArtifactState.getNonArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new Pair<>(balancedPrior, balancedPrior)));
+        ArtifactState.getF1R2ArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new BetaDistributionShape(PSEUDO_COUNT_OF_LIKELY_OUTCOME, PSEUDO_COUNT_OF_RARE_OUTCOME)));
+        ArtifactState.getF2R1ArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new BetaDistributionShape(PSEUDO_COUNT_OF_RARE_OUTCOME, PSEUDO_COUNT_OF_LIKELY_OUTCOME)));
+        ArtifactState.getNonArtifactStates().forEach(z -> altF1R2FractionPseudoCounts.put(z, new BetaDistributionShape(BALANCED_PRIOR, BALANCED_PRIOR)));
 
         return altF1R2FractionPseudoCounts;
     }
 
-    public double[] getEffectiveCounts(){
+    @VisibleForTesting
+    public double[] getRefResonsibilities(final int rowNum){
+        return refResponsibilities.getRow(rowNum);
+    }
+
+    @VisibleForTesting
+    public double[] getAltResonsibilities(final int rowNum){
+        return altResponsibilities.getRow(rowNum);
+    }
+
+    @VisibleForTesting
+    public double[] getAltDepth1Resonsibilities(final int rowNum){
+        return null;
+    }
+
+    @VisibleForTesting
+    public RealVector getEffectiveCounts(){
         return effectiveCounts;
     }
 
+    @VisibleForTesting
     public double getEffectiveCounts(ArtifactState state){
-        return effectiveCounts[state.ordinal()];
+        return effectiveCounts.getEntry(state.ordinal());
     }
 
     public static double[] getFlatPrior(final Nucleotide refAllele){
@@ -383,8 +365,4 @@ public class LearnReadOrientationModelEngine {
     private Triple<Integer, Nucleotide, ReadOrientation> createKey(final int depth, final Nucleotide altAllele, final ReadOrientation orientation){
         return new ImmutableTriple<>(depth, altAllele, orientation);
     }
-
-
-
-
 }

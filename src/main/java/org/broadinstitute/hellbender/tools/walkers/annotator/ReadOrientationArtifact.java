@@ -5,7 +5,6 @@ import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.GenotypeBuilder;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFFormatHeaderLine;
-import htsjdk.variant.vcf.VCFHeaderLineType;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.tools.walkers.readorientation.*;
 import org.broadinstitute.hellbender.utils.GATKProtectedVariantContextUtils;
@@ -13,10 +12,10 @@ import org.broadinstitute.hellbender.utils.MathUtils;
 import org.broadinstitute.hellbender.utils.Nucleotide;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.genotyper.ReadLikelihoods;
-import org.broadinstitute.hellbender.utils.locusiterator.AlignmentStateMachine;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.ReadUtils;
 import org.broadinstitute.hellbender.utils.variant.GATKVCFConstants;
+import org.broadinstitute.hellbender.utils.variant.GATKVCFHeaderLines;
 
 import java.io.File;
 import java.util.*;
@@ -26,10 +25,16 @@ import static org.broadinstitute.hellbender.tools.walkers.readorientation.F1R2Fi
 /**
  * Created by tsato on 10/20/17.
  */
-public class ReadOrientationArtifact extends GenotypeAnnotation implements StandardMutectAnnotation {
-    private File artifactPriorTable;
-    private List<ArtifactPrior> artifactPriors = Collections.emptyList();
+public class ReadOrientationArtifact extends GenotypeAnnotation implements NonStandardMutectAnnotation {
+    private ArtifactPriorCollection artifactPriorCollection;
     private int minimumBaseQuality = 20;
+
+    // Barclay requires that each annotation define a constructor that takes an argument
+    public ReadOrientationArtifact(){ }
+
+    public ReadOrientationArtifact(final File artifactPriorTable){
+        artifactPriorCollection = ArtifactPriorCollection.readArtifactPriors(artifactPriorTable);
+    }
 
     @Override
     public List<String> getKeyNames() {
@@ -38,12 +43,10 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
 
     @Override
     public List<VCFFormatHeaderLine> getDescriptions() {
-        return Arrays.asList(new VCFFormatHeaderLine(GATKVCFConstants.ROF_POSTERIOR_KEY, 1,
-                        VCFHeaderLineType.Float, "posterior probability of read orientaion artifact"),
-                new VCFFormatHeaderLine(GATKVCFConstants.ROF_PRIOR_KEY, 1,
-                        VCFHeaderLineType.Float, "prior probability of read oientation artifact under the present reference context"),
-                new VCFFormatHeaderLine(GATKVCFConstants.ROF_TYPE_KEY, 1,
-                        VCFHeaderLineType.String, "F1R2 or F2R1"));
+        return Arrays.asList(
+                GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.ROF_POSTERIOR_KEY),
+                GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.ROF_PRIOR_KEY),
+                GATKVCFHeaderLines.getFormatLine(GATKVCFConstants.ROF_TYPE_KEY));
     }
 
     @Override
@@ -55,15 +58,10 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
         Utils.nonNull(gb);
         Utils.nonNull(vc);
         Utils.nonNull(likelihoods);
-        final boolean normalSample = g.isHomRef();
+        Utils.nonNull(artifactPriorCollection);
 
-        /**
-         * Skip the following cases:
-         *  1. Normal sample
-         *  2. Non-SNP variants
-         *  3. The table of prior is not provided
-         */
-        if (normalSample || !vc.isSNP() || artifactPriors.isEmpty()){
+        // As of June 2018, genotype is hom ref iff we have the normal sample, but this may change in the future
+        if (g.isHomRef() || !vc.isSNP() ){
             return;
         }
 
@@ -72,14 +70,13 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
         final Allele altAllele = vc.getAlternateAllele(indexOfMaxTumorLod);
         final Nucleotide altBase = Nucleotide.valueOf(altAllele.toString());
 
-
         final String refContext = ref.getKmerAround(vc.getStart(), REF_CONTEXT_PADDING);
-        Utils.validate(refContext.length() == 2* REF_CONTEXT_PADDING + 1,
-                String.format("kmer must have length %d but got %d", 2* REF_CONTEXT_PADDING + 1, refContext.length()));
-
-        if (refContext.contains("N")) {
+        if (refContext ==  null || refContext.contains("N")){
             return;
         }
+
+        Utils.validate(refContext.length() == 2* REF_CONTEXT_PADDING + 1,
+                String.format("kmer must have length %d but got %d", 2* REF_CONTEXT_PADDING + 1, refContext.length()));
 
         final Nucleotide refAllele = F1R2FilterUtils.getMiddleBase(refContext);
         Utils.validate(refAllele == Nucleotide.valueOf(vc.getReference().toString().replace("*", "")),
@@ -106,15 +103,9 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
                 continue;
             }
 
-            // Use AlignmentStateMachine to find the base quality of the base at the position
-            // TODO: perhaps using the read likelihood is cheaper and serves the same purpose
-            final AlignmentStateMachine asm = new AlignmentStateMachine(read);
-            while ( asm.stepForwardOnGenome() != null && asm.getGenomePosition() < vc.getStart()) { }
-
-            final int readOffset = asm.getReadOffset();
-
-            // Throw away bases that is below the minimum quality
-            if (asm.getGenomePosition() == vc.getStart() && read.getBaseQuality(readOffset) < minimumBaseQuality){
+            // Throw away bases that is below the desired minimum quality
+            final OptionalInt baseQuality = BaseQuality.findBaseQuality(read, vc);
+            if (! baseQuality.isPresent() || baseQuality.getAsInt() < minimumBaseQuality){
                 continue;
             }
 
@@ -128,22 +119,16 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
             }
         }
 
-        final Optional<ArtifactPrior> hyps = ArtifactPrior.searchByContext(artifactPriors, refContext);
+        final Optional<ArtifactPrior> artifactPrior = artifactPriorCollection.get(refContext);
 
-        if (! hyps.isPresent()){
+        if (! artifactPrior.isPresent()){
             return;
         }
         
-        final double[] artifactPrior = hyps.get().getPi(refContext);
+        final double[] prior = artifactPrior.get().getPi();
         final int depth = refCount + altCount;
 
-        final double[] log10UnnormalizedPosteriorProbabilities = LearnReadOrientationModelEngine.computeLog10Responsibilities(
-                refAllele, altBase, altCount, altF1R2, depth, artifactPrior);
-
-        // We want the posterior of artifacts given that the site is not hom ref
-        log10UnnormalizedPosteriorProbabilities[ArtifactState.HOM_REF.ordinal()] = Double.NEGATIVE_INFINITY;
-
-        final double[] posterior = MathUtils.normalizeFromLog10ToLinearSpace(log10UnnormalizedPosteriorProbabilities);
+        final double[] posterior = LearnReadOrientationModelEngine.computeResponsibilities(refAllele, altBase, altCount, altF1R2, depth, prior, true);
 
         final double posteriorOfF1R2 = posterior[ArtifactState.getF1R2StateForAlt(altBase).ordinal()];
         final double posteriorOfF2R1 = posterior[ArtifactState.getF2R1StateForAlt(altBase).ordinal()];
@@ -154,14 +139,7 @@ public class ReadOrientationArtifact extends GenotypeAnnotation implements Stand
         gb.attribute(GATKVCFConstants.ROF_POSTERIOR_KEY, posteriorOfArtifact);
         final int indexOfArtifact = artifactType == ReadOrientation.F1R2 ?
                 ArtifactState.getF1R2StateForAlt(altBase).ordinal() : ArtifactState.getF2R1StateForAlt(altBase).ordinal();
-        gb.attribute(GATKVCFConstants.ROF_PRIOR_KEY, artifactPrior[indexOfArtifact]);
+        gb.attribute(GATKVCFConstants.ROF_PRIOR_KEY, prior[indexOfArtifact]);
         gb.attribute(GATKVCFConstants.ROF_TYPE_KEY, artifactType.toString());
     }
-
-    /** Part of the hack scheme that is required until we can pass an argument directly ot an annotation class **/
-    public void setPriorArtifactTable(final File artifactPriorTable){
-        this.artifactPriorTable = artifactPriorTable;
-        artifactPriors = ArtifactPrior.readArtifactPriors(artifactPriorTable);
-    }
-
 }

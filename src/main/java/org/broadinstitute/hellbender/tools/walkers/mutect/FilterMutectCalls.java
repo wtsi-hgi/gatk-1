@@ -11,7 +11,6 @@ import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.engine.*;
-import org.broadinstitute.hellbender.utils.GATKProtectedVariantContextUtils;
 import picard.cmdline.programgroups.VariantFilteringProgramGroup;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReadsContext;
@@ -24,7 +23,6 @@ import org.broadinstitute.hellbender.utils.variant.GATKVCFHeaderLines;
 import java.io.File;
 import java.util.Optional;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -86,9 +84,9 @@ public final class FilterMutectCalls extends TwoPassVariantWalker {
 
     private Mutect2FilteringEngine filteringEngine;
 
-    private List<Double> posteriorsOfReadArtifact;
+    private List<FilterResult> firstPassFilterResults;
 
-    private Mutect2FilterStats stats = null;
+    private Mutect2FilterSummary stats;
 
     @Override
     public void onTraversalStart() {
@@ -111,7 +109,7 @@ public final class FilterMutectCalls extends TwoPassVariantWalker {
         final Optional<String> normalSample = normalSampleHeaderLine == null ? Optional.empty() : Optional.of(normalSampleHeaderLine.getValue());
 
         filteringEngine = new Mutect2FilteringEngine(MTFAC, tumorSample, normalSample);
-        posteriorsOfReadArtifact = new ArrayList<>();
+        firstPassFilterResults = new ArrayList<>();
     }
 
     @Override
@@ -121,28 +119,23 @@ public final class FilterMutectCalls extends TwoPassVariantWalker {
 
     @Override
     public void firstPassApply(final VariantContext vc, final ReadsContext readsContext, final ReferenceContext refContext, final FeatureContext fc) {
-        final VariantContextBuilder vcb = new VariantContextBuilder(vc);
-        filteringEngine.applyFilters(MTFAC, vc, vcb);
-
-        if (vcb.make().getFilters().isEmpty()){
-            final double posterior = GATKProtectedVariantContextUtils.getAttributeAsDouble(vc.getGenotype(getTumorSampleName()), GATKVCFConstants.ROF_POSTERIOR_KEY, 0.0 );
-            posteriorsOfReadArtifact.add(posterior);
-        }
+        final FilterResult filterResult = filteringEngine.calculateFilters(MTFAC, vc, Optional.empty());
+        firstPassFilterResults.add(filterResult);
     }
 
     @Override
     protected void afterFirstPass() {
-        stats = filteringEngine.calculateThresholdForReadOrientationFilter(posteriorsOfReadArtifact, MTFAC.maxFalsePositiveRate);
-        Mutect2FilterStats.writeM2FilterStats(Arrays.asList(stats), MTFAC.mutect2FilteringStatsTable);
+        stats = filteringEngine.calculateFilterStats(firstPassFilterResults, MTFAC.maxFalsePositiveRate);
+        Mutect2FilterSummary.writeM2FilterSummary(stats, MTFAC.mutect2FilteringStatsTable);
     }
 
     @Override
     public void secondPassApply(final VariantContext vc, final ReadsContext readsContext, final ReferenceContext refContext, final FeatureContext fc) {
+        final FilterResult filterResult = filteringEngine.calculateFilters(MTFAC, vc, Optional.of(stats));
         final VariantContextBuilder vcb = new VariantContextBuilder(vc);
-        filteringEngine.applyFilters(MTFAC, vc, vcb);
 
-        // Apply the second pass filters
-        filteringEngine.applySecondPassFilters(MTFAC, vc, vcb, stats);
+        vcb.filters(filterResult.getFilters());
+        filterResult.getAttributes().entrySet().forEach(e -> vcb.attribute(e.getKey(), e.getValue()));
 
         vcfWriter.add(vcb.make());
     }

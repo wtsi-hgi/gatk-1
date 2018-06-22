@@ -14,14 +14,11 @@ import org.broadinstitute.hellbender.engine.filters.*;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.walkers.annotator.Annotation;
 import org.broadinstitute.hellbender.tools.walkers.annotator.StandardMutectAnnotation;
-import org.broadinstitute.hellbender.tools.walkers.annotator.ReadOrientationArtifact;
-import org.broadinstitute.hellbender.tools.walkers.annotator.ReferenceBases;
 import org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotatorEngine;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.GenotypingGivenAllelesUtils;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.GenotypingOutputMode;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.*;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ReadThreadingAssembler;
-import org.broadinstitute.hellbender.tools.walkers.readorientation.F1R2FilterConstants;
 import org.broadinstitute.hellbender.utils.*;
 import org.broadinstitute.hellbender.utils.activityprofile.ActivityProfileState;
 import org.broadinstitute.hellbender.utils.fasta.CachingIndexedFastaSequenceFile;
@@ -102,24 +99,6 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
         checkSampleInBamHeader(normalSample);
 
         annotationEngine = Utils.nonNull(annotatorEngine);
-
-        /*** START HACK ***/
-        // A hack to give the read orientation annotation an input to Mutect2, which is accessible only in M2ArgumentCollection.
-        // We need this until the day we can provide an annotation with an input file directly
-        if (MTAC.artifactPriorTable != null) {
-            final ReadOrientationArtifact readOrientationArtifact = (ReadOrientationArtifact) annotationEngine.getGenotypeAnnotations().stream()
-                    .filter(a -> a.getClass().getSimpleName().equals(ReadOrientationArtifact.class.getSimpleName()))
-                    .findFirst().get();
-            readOrientationArtifact.setPriorArtifactTable(MTAC.artifactPriorTable);
-
-            // Also modify the size of reference bases for the Read Orientation Filter
-            final ReferenceBases referenceBases = (ReferenceBases) annotationEngine.getInfoAnnotations().stream()
-                    .filter(a -> a.getClass().getSimpleName().equals(ReferenceBases.class.getSimpleName()))
-                    .findFirst().get();
-            referenceBases.setNumBasesOnEitherSide(F1R2FilterConstants.REF_CONTEXT_PADDING);
-        }
-        /*** END HACK ***/
-
         assemblyEngine = AssemblyBasedCallerUtils.createReadThreadingAssembler(MTAC);
         likelihoodCalculationEngine = AssemblyBasedCallerUtils.createLikelihoodCalculationEngine(MTAC.likelihoodArgs);
         genotypingEngine = new SomaticGenotypingEngine(samplesList, MTAC, tumorSample, normalSample);

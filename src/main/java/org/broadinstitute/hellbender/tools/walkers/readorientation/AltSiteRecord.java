@@ -29,7 +29,7 @@ public class AltSiteRecord {
 
     public AltSiteRecord(final String referenceContext, final int refCount, final int altCount,
                          final int refF1R2, final int altF1R2, final Nucleotide altAllele){
-        Utils.validateArg(F1R2FilterConstants.REGULAR_BASES.contains(altAllele), "altAllele must be one of {A,C,G,T} but got " + altAllele);
+        Utils.validateArg(Nucleotide.REGULAR_BASES.contains(altAllele), "altAllele must be one of {A,C,G,T} but got " + altAllele);
 
         this.referenceContext = referenceContext;
         this.refCount = refCount;
@@ -57,16 +57,7 @@ public class AltSiteRecord {
     public AltSiteRecord getReverseComplementOfRecord(){
         Utils.validate(!F1R2FilterConstants.CANONICAL_KMERS.contains(referenceContext), "for consistency, don't make the" +
                         "revcomp record of a canonical reference context");
-        Nucleotide revCompOfAlt;
-        switch (altAllele){
-            case A: revCompOfAlt = Nucleotide.T; break;
-            case C: revCompOfAlt = Nucleotide.G; break;
-            case G: revCompOfAlt = Nucleotide.C; break;
-            case T: revCompOfAlt = Nucleotide.A; break;
-            default:
-                throw new UserException("altAllele should be one of {A,C,G,T}");
-        }
-
+        final Nucleotide revCompOfAlt = Nucleotide.complement(altAllele.toBase());
         final int newRefF1R2 = refCount - refF1R2;
         final int newAltF1R2 = altCount - altF1R2;
         return new AltSiteRecord(SequenceUtil.reverseComplement(referenceContext), refCount, altCount, newRefF1R2,

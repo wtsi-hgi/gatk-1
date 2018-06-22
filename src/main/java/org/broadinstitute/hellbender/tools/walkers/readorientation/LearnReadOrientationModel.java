@@ -10,7 +10,7 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
-import org.broadinstitute.hellbender.cmdline.programgroups.CoverageAnalysisProgramGroup;
+import org.broadinstitute.hellbender.cmdline.programgroups.ShortVariantDiscoveryProgramGroup;
 import org.broadinstitute.hellbender.utils.Nucleotide;
 import org.broadinstitute.hellbender.utils.Utils;
 
@@ -21,11 +21,20 @@ import java.util.stream.Collectors;
 /**
  * Learn the prior probability of read orientation artifact from the output of {@link CollectF1R2Counts}
  * Details of the model may be found in docs/mutect/mutect.pdf.
+ *
+ *
+ * <h3>Usage Examples</h3>
+ *
+ * gatk LearnReadOrientationModel \
+ *   -alt-table my-tumor-sample-alt.tsv \
+ *   -ref-hist my-tumor-sample-ref.metrics \
+ *   -alt-hist my-tumor-sample-alt-depth1.metrics \
+ *   -O my-tumor-sample-artifact-prior.tsv
  */
 @CommandLineProgramProperties(
         summary = "Collect counts of F1R2 reads at each locus of a sam/bam/cram",
         oneLineSummary = "Collect counts of F1R2 reads at each locus of a sam/bam/cram",
-        programGroup = CoverageAnalysisProgramGroup.class // TODO: check that this is correct
+        programGroup = ShortVariantDiscoveryProgramGroup.class
 )
 public class LearnReadOrientationModel extends CommandLineProgram {
     public static final double DEFAULT_CONVERGENCE_THRESHOLD = 1e-4;
@@ -33,6 +42,7 @@ public class LearnReadOrientationModel extends CommandLineProgram {
 
     public static final String EM_CONVERGENCE_THRESHOLD_LONG_NAME = "convergence-threshold";
     public static final String MAX_EM_ITERATIONS_LONG_NAME = "num-em-iterations";
+    public static final String MAX_DEPTH_LONG_NAME = "max-depth";
 
     @Argument(fullName = CollectF1R2Counts.REF_SITE_METRICS_LONG_NAME, doc = "histograms of depths over ref sites for each reference context")
     private File refHistogramTable;
@@ -52,8 +62,14 @@ public class LearnReadOrientationModel extends CommandLineProgram {
     @Argument(fullName = MAX_EM_ITERATIONS_LONG_NAME, doc = "give up on EM after this many iterations", optional = true)
     private int maxEMIterations = DEFAULT_MAX_ITERATIONS;
 
+    @Argument(fullName = MAX_DEPTH_LONG_NAME, doc = "sites with depth higher than this value will be grouped", optional = true)
+    private int maxDepth = F1R2FilterConstants.DEFAULT_MAX_DEPTH;
+
     List<Histogram<Integer>> refHistograms;
+
     List<Histogram<Integer>> altHistograms;
+
+    final ArtifactPriorCollection artifactPriorCollection = new ArtifactPriorCollection();;
 
     @Override
     protected void onStartup(){
@@ -78,7 +94,6 @@ public class LearnReadOrientationModel extends CommandLineProgram {
 
         // Since AGT F1R2 is equivalent to ACT F2R1 (in the sense that the order of bases in the original molecule on which
         // the artifact befell and what the base changed to is the same)
-        final List<ArtifactPrior> artifactPriorAcrossContexts = new ArrayList<>((int) Math.pow(F1R2FilterConstants.REGULAR_BASES.size(), F1R2FilterConstants.REFERENCE_CONTEXT_SIZE)/2);
 
         // TODO: extract a method to account for reverse complement, and create a test
         for (final String refContext : F1R2FilterConstants.CANONICAL_KMERS){
@@ -86,10 +101,10 @@ public class LearnReadOrientationModel extends CommandLineProgram {
 
             final Histogram<Integer> refHistogram = refHistograms.stream()
                     .filter(h -> h.getValueLabel().equals(refContext))
-                    .findFirst().orElseGet(() -> F1R2FilterUtils.createRefHistogram(refContext));
+                    .findFirst().orElseGet(() -> F1R2FilterUtils.createRefHistogram(refContext, maxDepth));
             final Histogram<Integer> refHistogramRevComp = refHistograms.stream()
                     .filter(h -> h.getValueLabel().equals(reverseComplement))
-                    .findFirst().orElseGet(() -> F1R2FilterUtils.createRefHistogram(reverseComplement));
+                    .findFirst().orElseGet(() -> F1R2FilterUtils.createRefHistogram(reverseComplement, maxDepth));
 
             final List<Histogram<Integer>> altDepthOneHistogramsForContext = altHistograms.stream()
                     .filter(h -> h.getValueLabel().startsWith(refContext))
@@ -106,8 +121,8 @@ public class LearnReadOrientationModel extends CommandLineProgram {
             // Warning: the below method will mutate the content of {@link altDesignMatrixRevComp} and append to {@code altDesignMatrix}
             mergeDesignMatrices(altDesignMatrix, altDesignMatrixRevComp);
 
-            final Histogram<Integer> combinedRefHistograms = combineRefHistogramWithRC(refContext, refHistogram, refHistogramRevComp);
-            final List<Histogram<Integer>> combinedAltHistograms = combineAltDepthOneHistogramWithRC(altDepthOneHistogramsForContext, altDepthOneHistogramsRevComp);
+            final Histogram<Integer> combinedRefHistograms = combineRefHistogramWithRC(refContext, refHistogram, refHistogramRevComp, maxDepth);
+            final List<Histogram<Integer>> combinedAltHistograms = combineAltDepthOneHistogramWithRC(altDepthOneHistogramsForContext, altDepthOneHistogramsRevComp, maxDepth);
 
             if (combinedRefHistograms.getSumOfValues() == 0 || altDesignMatrix.isEmpty()) {
                 logger.info(String.format("Skipping the reference context %s as we didn't find either the ref or alt table for the context", refContext));
@@ -120,25 +135,27 @@ public class LearnReadOrientationModel extends CommandLineProgram {
                     altDesignMatrix,
                     converagenceThreshold,
                     maxEMIterations,
+                    maxDepth,
                     logger);
             final ArtifactPrior artifactPrior = engine.learnPriorForArtifactStates();
-            artifactPriorAcrossContexts.add(artifactPrior);
+            artifactPriorCollection.set(artifactPrior);
         }
 
-        ArtifactPrior.writeArtifactPriors(artifactPriorAcrossContexts, output);
+        artifactPriorCollection.writeArtifactPriors(output);
         return "SUCCESS";
     }
 
     @VisibleForTesting
     public static Histogram<Integer> combineRefHistogramWithRC(final String refContext,
                                                                final Histogram<Integer> refHistogram,
-                                                               final Histogram<Integer> refHistogramRevComp){
+                                                               final Histogram<Integer> refHistogramRevComp,
+                                                               final int maxDepth){
         Utils.validateArg(refHistogram.getValueLabel()
                 .equals(SequenceUtil.reverseComplement(refHistogramRevComp.getValueLabel())),
                 "ref context = " + refHistogram.getValueLabel() + ", rev comp = " + refHistogramRevComp.getValueLabel());
         Utils.validateArg(refHistogram.getValueLabel().equals(refContext), "this better match");
 
-        final Histogram<Integer> combinedRefHistogram = F1R2FilterUtils.createRefHistogram(refContext);
+        final Histogram<Integer> combinedRefHistogram = F1R2FilterUtils.createRefHistogram(refContext, maxDepth);
 
         for (final Integer depth : refHistogram.keySet()){
             final double newCount = refHistogram.get(depth).getValue() + refHistogramRevComp.get(depth).getValue();
@@ -150,7 +167,8 @@ public class LearnReadOrientationModel extends CommandLineProgram {
 
     @VisibleForTesting
     public static List<Histogram<Integer>> combineAltDepthOneHistogramWithRC(final List<Histogram<Integer>> altHistograms,
-                                                                             final List<Histogram<Integer>> altHistogramsRevComp){
+                                                                             final List<Histogram<Integer>> altHistogramsRevComp,
+                                                                             final int maxDepth){
         if (altHistograms.isEmpty() && altHistogramsRevComp.isEmpty()){
             return Collections.emptyList();
         }
@@ -164,7 +182,7 @@ public class LearnReadOrientationModel extends CommandLineProgram {
 
         final List<Histogram<Integer>> combinedHistograms = new ArrayList<>(F1R2FilterConstants.numAltHistogramsPerContext);
 
-        for (Nucleotide altAllele : F1R2FilterConstants.REGULAR_BASES){
+        for (Nucleotide altAllele : Nucleotide.REGULAR_BASES){
             // Skip when the alt base is the ref base, which doesn't make sense because this is a histogram of alt sites
             if (altAllele == F1R2FilterUtils.getMiddleBase(refContext)){
                 continue;
@@ -174,23 +192,22 @@ public class LearnReadOrientationModel extends CommandLineProgram {
             final Nucleotide altAlleleRevComp = Nucleotide.valueOf(SequenceUtil.reverseComplement(altAllele.toString()));
 
             for (ReadOrientation orientation : ReadOrientation.values()) {
-                final ReadOrientation oppositeType = orientation == ReadOrientation.F1R2 ? ReadOrientation.F2R1 : ReadOrientation.F1R2;
+                final ReadOrientation otherOrientation = ReadOrientation.getOtherOrientation(orientation);
                 final Histogram<Integer> altHistogram = altHistograms.stream()
                         .filter(h -> h.getValueLabel().equals(F1R2FilterUtils.tripletToLabel(refContext, altAllele, orientation)))
-                        .findFirst().orElseGet(() -> F1R2FilterUtils.createAltHistogram(refContext, altAllele, orientation));
+                        .findFirst().orElseGet(() -> F1R2FilterUtils.createAltHistogram(refContext, altAllele, orientation, maxDepth));
 
                 final Histogram<Integer> altHistogramRevComp = altHistogramsRevComp.stream()
-                        .filter(h -> h.getValueLabel().equals(F1R2FilterUtils.tripletToLabel(reverseComplement, altAlleleRevComp, oppositeType)))
-                        .findFirst().orElseGet(() -> F1R2FilterUtils.createAltHistogram(reverseComplement, altAlleleRevComp, oppositeType));
+                        .filter(h -> h.getValueLabel().equals(F1R2FilterUtils.tripletToLabel(reverseComplement, altAlleleRevComp, otherOrientation)))
+                        .findFirst().orElseGet(() -> F1R2FilterUtils.createAltHistogram(reverseComplement, altAlleleRevComp, otherOrientation, maxDepth));
 
-                final Histogram<Integer> combinedHistogram = F1R2FilterUtils.createAltHistogram(refContext, altAllele, orientation);
+                final Histogram<Integer> combinedHistogram = F1R2FilterUtils.createAltHistogram(refContext, altAllele, orientation, maxDepth);
 
                 // Add the histograms manually - I don't like the addHistogram() in htsjdk method because it does so with side-effect
                 for (final Integer depth : altHistogram.keySet()){
                     final double newCount = altHistogram.get(depth).getValue() + altHistogramRevComp.get(depth).getValue();
                     combinedHistogram.increment(depth, newCount);
                 }
-
                 combinedHistograms.add(combinedHistogram);
             }
         }
