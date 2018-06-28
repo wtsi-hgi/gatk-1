@@ -1,15 +1,12 @@
 package org.broadinstitute.hellbender.tools.walkers.mutect;
 
-import breeze.stats.distributions.Bernoulli;
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import htsjdk.variant.vcf.*;
 import org.apache.commons.math.special.Beta;
 import org.apache.commons.math.special.Gamma;
-import org.apache.commons.math3.distribution.BetaDistribution;
 import org.apache.commons.math3.util.FastMath;
-import org.apache.commons.math3.util.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.engine.*;
@@ -230,7 +227,7 @@ public final class Mutect2Engine implements AssemblyRegionEvaluator {
     @Override
     public ActivityProfileState isActive(final AlignmentContext context, final ReferenceContext ref, final FeatureContext featureContext) {
         if ( MTAC.genotypingOutputMode == GenotypingOutputMode.GENOTYPE_GIVEN_ALLELES ) {
-            final VariantContext vcFromAllelesRod = GenotypingGivenAllelesUtils.composeGivenAllelesVariantContextFromRod(featureContext, ref.getInterval(), false, MTAC.genotypeFilteredAlleles, logger, MTAC.alleles);
+            final VariantContext vcFromAllelesRod = GenotypingGivenAllelesUtils.composeGivenAllelesVariantContextFromRod(featureContext, ref.getInterval(), false, MTAC.genotypeFilteredAlleles, MTAC.alleles);
             if( vcFromAllelesRod != null ) {
                 return new ActivityProfileState(ref.getInterval(), 1.0);
             }
