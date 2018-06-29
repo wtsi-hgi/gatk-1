@@ -109,6 +109,13 @@ final class HomRefBlock implements Locatable {
         add(pos, pos, genotype);
     }
 
+    /**
+     * Add a homRef block to the current block
+     *
+     * @param pos current genomic position
+     * @param newEnd new calculated block end position
+     * @param genotype A non-null Genotype with GQ and DP attributes
+     */
     public void add(final int pos, final int newEnd, final Genotype genotype) {
         Utils.nonNull(genotype, "genotype cannot be null");
         if ( ! genotype.hasPL() ) { throw new IllegalArgumentException("genotype must have PL field");}

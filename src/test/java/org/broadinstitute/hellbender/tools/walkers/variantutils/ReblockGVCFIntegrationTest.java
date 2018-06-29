@@ -17,9 +17,6 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 
-/**
- * Created by gauthier on 10/2/17.
- */
 public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
 
     private static final String hg38_reference_20_21 = largeFileTestDir + "Homo_sapiens_assembly38.20.21.fasta";
@@ -29,7 +26,7 @@ public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
     public void testJustOneSample() throws Exception {
         final IntegrationTestSpec spec = new IntegrationTestSpec(
                 "-L chr20:69485-69791 -O %s -R " + hg38_reference_20_21 +
-                        " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf -RGQ-threshold 20" +
+                        " -V " + getToolTestDataDir() + "gvcfForReblocking.g.vcf -rgq-threshold 20" +
                         " --" + StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE + " false",
                 Arrays.asList(getToolTestDataDir() + "testJustOneSample.expected.g.vcf"));
         spec.executeTest("testJustOneSample", this);
@@ -43,7 +40,7 @@ public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
         final ArgumentsBuilder args = new ArgumentsBuilder();
         args.addReference(new File(b37_reference_20_21))
                 .addArgument("V", getToolTestDataDir() + "NA12878.prod.chr20snippet.g.vcf")
-                .addArgument("RGQ-threshold", "20")
+                .addArgument("rgq-threshold", "20")
                 .addArgument("L", "20:60001-1000000")
                 .addOutput(output);
         runCommandLine(args);

@@ -124,7 +124,7 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
         gb.DP(10);
         gb.AD(new int[]{1, 2});
         gb.PL(new int[]{0, 10, 100});
-        vcb.attribute("END", end);
+        vcb.attribute(VCFConstants.END_KEY, end);
         return vcb.genotypes(gb.make()).make();
     }
 
@@ -415,7 +415,7 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
         writer.close();
         Assert.assertEquals(mockWriter.emitted.size(), 3);
         assertGoodVC(mockWriter.emitted.get(0), CHR1, 1, 2, false);
-        Assert.assertFalse(mockWriter.emitted.get(1).hasAttribute("END"));
+        Assert.assertFalse(mockWriter.emitted.get(1).hasAttribute(VCFConstants.END_KEY));
         Assert.assertFalse(mockWriter.emitted.get(1).hasAttribute("BLOCK_SIZE"));
         assertGoodVC(mockWriter.emitted.get(2), CHR1, 4, 7, false);
     }
