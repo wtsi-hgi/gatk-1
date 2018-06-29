@@ -16,13 +16,22 @@ import static org.broadinstitute.hellbender.utils.variant.GATKVCFConstants.*;
 public class GATKVCFHeaderLines {
 
     public static VCFInfoHeaderLine getInfoLine(final String id) {
-        return (infoLines.containsKey(id) ? infoLines.get(id) : new VCFInfoHeaderLine(id, 1, VCFHeaderLineType.Integer, "(Key not found -- type may be incorrect)"));
+        if (!infoLines.containsKey(id)) {
+            throw new IllegalStateException("No VCF INFO header line found for key " + id);
+        }
+        return infoLines.get(id);
     }
     public static VCFFormatHeaderLine getFormatLine(final String id) {
-        return (formatLines.containsKey(id) ? formatLines.get(id) : new VCFFormatHeaderLine(id, 1, VCFHeaderLineType.Integer, "(Key not found -- type may be incorrect)"));
+        if (!formatLines.containsKey(id)) {
+            throw new IllegalStateException("No VCF FORMAT header line found for key " + id);
+        }
+        return formatLines.get(id);
     }
     public static VCFFilterHeaderLine getFilterLine(final String id) {
-        return (filterLines.containsKey(id)? filterLines.get(id) : new VCFFilterHeaderLine("(Key not found)"));
+        if (!filterLines.containsKey(id)) {
+            throw new IllegalStateException("No VCF FILTER header line found for key " + id);
+        }
+        return filterLines.get(id);
     }
 
     public static Set<VCFInfoHeaderLine> getAllInfoLines() { return Collections.unmodifiableSet(new HashSet<>(infoLines.values())); }

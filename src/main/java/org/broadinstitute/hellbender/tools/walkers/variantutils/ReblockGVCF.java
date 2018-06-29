@@ -226,7 +226,7 @@ public final class ReblockGVCF extends VariantWalker {
         //variants with PL[0] less than threshold get turned to homRef with PL=[0,0,0], shouldn't get INFO attributes
         //make sure we can call het variants with GQ >= rgqThreshold in joint calling downstream
         if(shouldBeReblocked(result)) {
-            return reblockVariant(result, originalVC);
+            return lowQualVariantToGQ0HomRef(result, originalVC);
         }
         //high quality variant
         else {
@@ -271,8 +271,7 @@ public final class ReblockGVCF extends VariantWalker {
     }
 
     //"reblock" a variant by converting its genotyping to homRef, changing PLs, adding reblock END tags and other attributes
-    @VisibleForTesting
-    private VariantContext reblockVariant(final VariantContext result, final VariantContext originalVC) {
+    public VariantContext lowQualVariantToGQ0HomRef(final VariantContext result, final VariantContext originalVC) {
         if(dropLowQuals && !isHomRefCall(result)) {
             return null;
         }
@@ -282,7 +281,7 @@ public final class ReblockGVCF extends VariantWalker {
         final GenotypeBuilder gb = new GenotypeBuilder(genotype);
         //NB: If we're dropping a deletion allele, then we need to trim the reference and add an END tag with the vc stop position
         if(result.getReference().length() > 1) {
-            attrMap.put("END", result.getEnd());
+            attrMap.put(VCFConstants.END_KEY, result.getEnd());
             newRef = Allele.create(newRef.getBases()[0], true);
             gb.alleles(Arrays.asList(newRef, newRef));
         }

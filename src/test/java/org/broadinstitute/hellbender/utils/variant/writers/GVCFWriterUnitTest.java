@@ -11,6 +11,7 @@ import htsjdk.variant.vcf.VCFHeader;
 import htsjdk.variant.vcf.VCFHeaderLine;
 import htsjdk.variant.vcf.VCFStandardHeaderLines;
 import org.broadinstitute.hellbender.engine.FeatureDataSource;
+import org.broadinstitute.hellbender.tools.walkers.variantutils.ReblockGVCF;
 import org.broadinstitute.hellbender.utils.MathUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
@@ -651,6 +652,55 @@ public class GVCFWriterUnitTest extends GATKBaseTest {
 
         IntegrationTestSpec.assertEqualTextFiles(outputFile, comparisonFile);
 
+    }
+
+    @Test
+    public void testOverlappingDeletions() {
+        final ReblockGVCF reblocker = new ReblockGVCF();
+
+        final Allele ref1 = Allele.create("TACACACACATACACACACAC", true);
+        final Allele alt1 = Allele.create("T", false);
+        final Allele ref2 = Allele.create("TACACACACACTACTA", true);
+        final Allele ref3 = Allele.create("C", true);
+        final VariantContext deletion1 = new VariantContextBuilder(null, "1", 10000, 10020, Arrays.asList(ref1, alt1,
+                Allele.NON_REF_ALLELE))
+                .log10PError(1000 / -10 )
+                .genotypes(new GenotypeBuilder(SAMPLE_NAME, Arrays.asList(ref1, alt1))
+                        .AD(new int[]{7,23,0})
+                        .DP(30)
+                        .GQ(99)
+                        .PL(new int[] {40, 0, 212, 591, 281, 872})
+                        .attribute(GATKVCFConstants.STRAND_BIAS_BY_SAMPLE_KEY, new int[]{4,3,23,0})
+                        .make())
+                .make();
+
+        final VariantContext deletion2 = new VariantContextBuilder(null, "1", 10010, 10025, Arrays.asList(ref2, alt1,
+                Allele.NON_REF_ALLELE))
+                .log10PError(10 / -10 )
+                .genotypes(new GenotypeBuilder(SAMPLE_NAME, Arrays.asList(ref2, alt1))
+                        .AD(new int[]{7,23,0})
+                        .DP(30)
+                        .GQ(99)
+                        .PL(new int[] {40, 0, 212, 591, 281, 872})
+                        .attribute(GATKVCFConstants.STRAND_BIAS_BY_SAMPLE_KEY, new int[]{4,3,23,0})
+                        .make())
+                .make();
+
+        final VariantContext origRefBlock = makeHomRef("1", 10026, 60, 10050);
+
+        //Let's say that these "low quality" deletions are below the RGQ threshold and get converted to homRefs with all zero PLs
+        final VariantContext block1 = reblocker.lowQualVariantToGQ0HomRef(deletion1, deletion1);
+        final VariantContext block2 = reblocker.lowQualVariantToGQ0HomRef(deletion2, deletion2);
+
+        final MockWriter mockWriter = new MockWriter();
+        final GVCFWriter writer = new GVCFWriter(mockWriter, Arrays.asList(20,100), 2);
+        writer.add(deletion1);
+        writer.add(block2);
+        writer.add(origRefBlock);
+        writer.close();
+        Assert.assertTrue(mockWriter.emitted.size() == 3);
+        Assert.assertTrue(mockWriter.emitted.get(1).getEnd()+1 == mockWriter.emitted.get(2).getStart());
+        //The first two blocks overlap, which is fine, but the important thing is that there's no "hole" between the first deletion and the final block
     }
 
 }
