@@ -312,11 +312,11 @@ public final class ReblockGVCF extends VariantWalker {
     }
 
     /**
-     * Note that his modifies {@code attrMap} as a side effect
+     * Note that this modifies {@code attrMap} as a side effect
      * @return a GenotypeBuilder to make a 0/0 call with PLs=[0,0,0]
      */
     @VisibleForTesting
-    private GenotypeBuilder makeGQ0RefCall(final VariantContext result, final Map<String, Object> attrMap) {
+    protected GenotypeBuilder makeGQ0RefCall(final VariantContext result, final Map<String, Object> attrMap) {
         Allele newRef = result.getReference();
         Genotype genotype = result.getGenotype(0);
         GenotypeBuilder gb = new GenotypeBuilder(genotype);
@@ -334,7 +334,7 @@ public final class ReblockGVCF extends VariantWalker {
     }
 
     @VisibleForTesting
-    private VariantContext cleanUpHighQualityVariant(final VariantContext result, final VariantContext originalVC) {
+    protected VariantContext cleanUpHighQualityVariant(final VariantContext result, final VariantContext originalVC) {
         Map<String, Object> attrMap = new HashMap<>();
         Map<String, Object> origMap = originalVC.getAttributes();
         //copy over info annotations
