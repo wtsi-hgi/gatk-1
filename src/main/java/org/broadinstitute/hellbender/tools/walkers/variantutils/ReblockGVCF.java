@@ -92,7 +92,7 @@ public final class ReblockGVCF extends VariantWalker {
     }
 
     @Advanced
-    @Argument(fullName="drop-low-qual-variants", shortName="drop-low-quals", doc="Exclude variants and homRef blocks that are GQ0 from the reblocked GVCF to save space")
+    @Argument(fullName="drop-low-quals", shortName="drop-low-quals", doc="Exclude variants and homRef blocks that are GQ0 from the reblocked GVCF to save space; drop low quality/uncalled alleles")
     protected boolean dropLowQuals = false;
 
     @Advanced
@@ -137,22 +137,18 @@ public final class ReblockGVCF extends VariantWalker {
         final Set<VCFHeaderLine> headerLines = new HashSet<>(inputHeaders);
         // Remove GCVFBlocks, legacy headers, and annotations that aren't informative for single samples
         headerLines.removeIf(vcfHeaderLine -> vcfHeaderLine.getKey().startsWith(GVCFWriter.GVCF_BLOCK) ||
-                infoFieldAnnotationKeyNamesToRemove.contains(vcfHeaderLine.getKey()));
+                (vcfHeaderLine.getKey().equals("INFO")) && infoFieldAnnotationKeyNamesToRemove.contains(((VCFInfoHeaderLine)vcfHeaderLine).getID()));
 
         headerLines.addAll(getDefaultToolVCFHeaderLines());
 
         genotypingEngine = createGenotypingEngine(new IndexedSampleList(inputHeader.getGenotypeSamples()));
-        annotationEngine = new VariantAnnotatorEngine(makeVariantAnnotations(), dbsnp.dbsnp, Collections.emptyList(), false);
+        createAnnotationEngine();
 
         headerLines.addAll(annotationEngine.getVCFAnnotationDescriptions(false));
         headerLines.add(VCFStandardHeaderLines.getInfoLine(VCFConstants.DEPTH_KEY));   // needed for gVCFs without DP tags
         headerLines.add(GATKVCFHeaderLines.getInfoLine(GATKVCFConstants.RAW_QUAL_APPROX_KEY));
         headerLines.add(GATKVCFHeaderLines.getInfoLine(GATKVCFConstants.VARIANT_DEPTH_KEY));
         headerLines.add(GATKVCFHeaderLines.getInfoLine(GATKVCFConstants.MAPPING_QUALITY_DEPTH));
-
-
-
-
 
         if ( dbsnp.dbsnp != null  ) {
             VCFStandardHeaderLines.addStandardInfoLines(headerLines, true, VCFConstants.DBSNP_KEY);
@@ -181,6 +177,11 @@ public final class ReblockGVCF extends VariantWalker {
 
     }
 
+    @VisibleForTesting
+    protected void createAnnotationEngine() {
+        annotationEngine = new VariantAnnotatorEngine(makeVariantAnnotations(), dbsnp.dbsnp, Collections.emptyList(), false);
+    }
+
     // get VariantContexts from input gVCFs and regenotype
     public void apply(VariantContext variant, ReadsContext reads, ReferenceContext ref, FeatureContext features) {
         final VariantContext newVC = regenotypeVC(variant);
@@ -195,6 +196,7 @@ public final class ReblockGVCF extends VariantWalker {
 
     /**
      * Re-genotype (and re-annotate) a VariantContext
+     * Note that the GVCF write takes care of the actual homRef block merging based on {@code GVCFGQBands}
      *
      * @param originalVC     the combined genomic VC
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
@@ -211,7 +213,8 @@ public final class ReblockGVCF extends VariantWalker {
             return filterHomRefBlock(result);
         }
 
-        //don't need to calculate quals for sites with no data whatsoever or sites already genotyped homRef
+        //don't need to calculate quals for sites with no data whatsoever or sites already genotyped homRef,
+        // but if STAND_CALL_CONF > 0 we need to drop low quality alleles and regenotype
         if (result.getAttributeAsInt(VCFConstants.DEPTH_KEY,0) > 0 && !isHomRefCall(result)) {
             final GenotypeLikelihoodsCalculationModel model = result.getType() == VariantContext.Type.INDEL
                     ? GenotypeLikelihoodsCalculationModel.INDEL
@@ -271,29 +274,20 @@ public final class ReblockGVCF extends VariantWalker {
     }
 
     //"reblock" a variant by converting its genotyping to homRef, changing PLs, adding reblock END tags and other attributes
+    @VisibleForTesting
     public VariantContext lowQualVariantToGQ0HomRef(final VariantContext result, final VariantContext originalVC) {
         if(dropLowQuals && !isHomRefCall(result)) {
             return null;
         }
+
         final Map<String, Object> attrMap = new HashMap<>();
         Allele newRef = result.getReference();
-        final Genotype genotype = result.getGenotype(0);
-        final GenotypeBuilder gb = new GenotypeBuilder(genotype);
-        //NB: If we're dropping a deletion allele, then we need to trim the reference and add an END tag with the vc stop position
-        if(result.getReference().length() > 1) {
-            attrMap.put(VCFConstants.END_KEY, result.getEnd());
-            newRef = Allele.create(newRef.getBases()[0], true);
-            gb.alleles(Arrays.asList(newRef, newRef));
-        }
-        //if GT is not homRef, correct it
-        if (!isHomRefCall(result)) {
-            gb.PL(new int[3]);  //3 for diploid PLs, automatically initializes to zero
-            gb.GQ(0);
-            gb.alleles(Arrays.asList(newRef, newRef));
-        }
+        final GenotypeBuilder gb = changeCallToGQ0HomRef(result, attrMap);
+
         //there are some cases where there are low quality variants with homRef calls AND alt alleles!
         //TODO: the best thing would be to take the most likely alt's likelihoods
-        else if (originalVC.getNAlleles() > 2) {
+        if (isHomRefCall(originalVC)) {
+            final Genotype genotype = result.getGenotype(0);
             final int[] idxVector = originalVC.getGLIndecesOfAlternateAllele(Allele.NON_REF_ALLELE);   //this is always length 3
             final int[] multiallelicPLs = genotype.getPL();
             final int[] newPLs = new int[3];
@@ -301,24 +295,28 @@ public final class ReblockGVCF extends VariantWalker {
             newPLs[1] = multiallelicPLs[idxVector[1]];
             newPLs[2] = multiallelicPLs[idxVector[2]];
             gb.PL(newPLs);
+            if (genotype.hasAD()) {
+                int depth = (int) MathUtils.sum(genotype.getAD());
+                gb.DP(depth);
+                gb.attribute(GATKVCFConstants.MIN_DP_FORMAT_KEY, depth);
+            }
         }
-        if (genotype.hasAD()) {
-            int depth = (int) MathUtils.sum(genotype.getAD());
-            gb.DP(depth);
-            gb.attribute(GATKVCFConstants.MIN_DP_FORMAT_KEY, depth);
-        }
+
         VariantContextBuilder builder = new VariantContextBuilder(result);
-        return builder.alleles(Arrays.asList(newRef, Allele.NON_REF_ALLELE)).unfiltered().log10PError(VariantContext.NO_LOG10_PERROR).attributes(attrMap).genotypes(gb.make()).make(); //genotyping engine will add lowQual filter, so strip it off
+        final Genotype newG = gb.make();
+        return builder.alleles(Arrays.asList(newG.getAlleles().get(0), Allele.NON_REF_ALLELE)).unfiltered().log10PError(VariantContext.NO_LOG10_PERROR).attributes(attrMap).genotypes(newG).make(); //genotyping engine will add lowQual filter, so strip it off
     }
 
     /**
      * Note that this modifies {@code attrMap} as a side effect
+     * @param result a VC to be converted to a GQ0 homRef call
+     * @param attrMap the new VC attribute map, to update the END tag as necessary
      * @return a GenotypeBuilder to make a 0/0 call with PLs=[0,0,0]
      */
     @VisibleForTesting
-    protected GenotypeBuilder makeGQ0RefCall(final VariantContext result, final Map<String, Object> attrMap) {
-        Allele newRef = result.getReference();
+    protected GenotypeBuilder changeCallToGQ0HomRef(final VariantContext result, final Map<String, Object> attrMap) {
         Genotype genotype = result.getGenotype(0);
+        Allele newRef = result.getReference();
         GenotypeBuilder gb = new GenotypeBuilder(genotype);
         //NB: If we're dropping a deletion allele, then we need to trim the reference and add an END tag with the vc stop position
         if (result.getReference().length() > 1) {
@@ -326,6 +324,7 @@ public final class ReblockGVCF extends VariantWalker {
             newRef = Allele.create(newRef.getBases()[0], true);
             gb.alleles(Collections.nCopies(PLOIDY_TWO, newRef));
         }
+        //if GT is not homRef, correct it
         if (!isHomRefCall(result)) {
             gb.PL(new int[3]);  //3 for diploid PLs, automatically initializes to zero
             gb.GQ(0).noAD().alleles(Collections.nCopies(PLOIDY_TWO, newRef)).noAttributes();
@@ -340,8 +339,12 @@ public final class ReblockGVCF extends VariantWalker {
         //copy over info annotations
         for(final InfoFieldAnnotation annotation : annotationEngine.getInfoAnnotations()) {
             for (final String key : annotation.getKeyNames()) {
-                if (origMap.containsKey(key))
-                    attrMap.put(key, origMap.get(annotation));
+                if (infoFieldAnnotationKeyNamesToRemove.contains(key)) {
+                    continue;
+                }
+                if (origMap.containsKey(key)) {
+                    attrMap.put(key, origMap.get(key));
+                }
             }
         }
         final Genotype genotype = result.getGenotype(0);
@@ -359,7 +362,7 @@ public final class ReblockGVCF extends VariantWalker {
         boolean allelesNeedSubsetting = false;
         List<Allele> allelesToDrop = new ArrayList<>();
         if (dropLowQuals) {
-            //only put in alleles that are called if we're dropping low quality variants (mostly because this can introduce GVCF gaps if deletion alleles are dropped)
+            //drop low quality alleles iff we're dropping low quality variants (mostly because this can introduce GVCF gaps if deletion alleles are dropped)
             for (final Allele currAlt : result.getAlternateAlleles()) {
                 boolean foundMatch = false;
                 for (final Allele gtAllele : genotype.getAlleles()) {
@@ -371,7 +374,7 @@ public final class ReblockGVCF extends VariantWalker {
                         if (dropLowQuals) { //don't regenotype, just drop it -- this is a GQ 0 case if ever I saw one
                             return null;
                         } else {
-                            GenotypeBuilder gb = makeGQ0RefCall(result, attrMap);
+                            GenotypeBuilder gb = changeCallToGQ0HomRef(result, attrMap);
                             return builder.alleles(Arrays.asList(result.getReference(), Allele.NON_REF_ALLELE)).unfiltered().log10PError(VariantContext.NO_LOG10_PERROR).attributes(attrMap).genotypes(gb.make()).make();
                         }
                     }

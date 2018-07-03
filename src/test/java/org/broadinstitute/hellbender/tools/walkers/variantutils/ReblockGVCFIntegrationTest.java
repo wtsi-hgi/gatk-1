@@ -35,11 +35,11 @@ public class ReblockGVCFIntegrationTest extends CommandLineProgramTest {
     @Test
     public void testGVCFReblockingIsContiguous() throws Exception {
         final File output = createTempFile("reblockedgvcf", ".vcf");
-        final File expected = new File(getToolTestDataDir() + "testProductionGVCF.expected.g.vcf");
+        final File expected = new File(largeFileTestDir + "testProductionGVCF.expected.g.vcf.gz");
 
         final ArgumentsBuilder args = new ArgumentsBuilder();
         args.addReference(new File(b37_reference_20_21))
-                .addArgument("V", getToolTestDataDir() + "NA12878.prod.chr20snippet.g.vcf")
+                .addArgument("V", largeFileTestDir + "NA12878.prod.chr20snippet.g.vcf.gz")
                 .addArgument("rgq-threshold", "20")
                 .addArgument("L", "20:60001-1000000")
                 .addOutput(output);
