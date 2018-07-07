@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 public class ReblockGVCFUnitTest {
-    private final ReblockGVCF reblocker = new ReblockGVCF();
-
     private final static Allele LONG_REF = Allele.create("ACTG", true);
     private final static Allele DELETION = Allele.create("A", false);
     private final static Allele SHORT_REF = Allele.create("A", true);
@@ -22,6 +20,7 @@ public class ReblockGVCFUnitTest {
 
     @Test
     public void testCleanUpHighQualityVariant() {
+        final ReblockGVCF reblocker = new ReblockGVCF();
         //We need an annotation engine for cleanUpHighQualityVariant()
         reblocker.createAnnotationEngine();
         reblocker.dropLowQuals = true;
@@ -57,11 +56,28 @@ public class ReblockGVCFUnitTest {
 
     @Test
     public void testLowQualVariantToGQ0HomRef() {
+        final ReblockGVCF reblocker = new ReblockGVCF();
 
+        reblocker.dropLowQuals = true;
+        final Genotype g = makeG("sample1", LONG_REF, Allele.NON_REF_ALLELE, 200, 100, 200, 11, 0, 37);
+        final VariantContext toBeNoCalled = makeDeletionVC("lowQualVar", Arrays.asList(LONG_REF, DELETION, Allele.NON_REF_ALLELE), LONG_REF.length(), g);
+        final VariantContext dropped = reblocker.lowQualVariantToGQ0HomRef(toBeNoCalled, toBeNoCalled);
+        Assert.assertEquals(dropped, null);
+
+        reblocker.dropLowQuals = false;
+        final VariantContext modified = reblocker.lowQualVariantToGQ0HomRef(toBeNoCalled, toBeNoCalled);
+        Assert.assertTrue(modified.getAttributes().containsKey(VCFConstants.END_KEY));
+        Assert.assertTrue(modified.getAttributes().get(VCFConstants.END_KEY).equals(13));
+        Assert.assertTrue(modified.getReference().equals(SHORT_REF));
+        Assert.assertTrue(modified.getAlternateAllele(0).equals(Allele.NON_REF_ALLELE));
+        Assert.assertTrue(!modified.filtersWereApplied());
+        Assert.assertTrue(modified.getLog10PError() == VariantContext.NO_LOG10_PERROR);
     }
 
     @Test
-    public void testMakeGQ0RefCall() {
+    public void testChangeCallToGQ0HomRef() {
+        final ReblockGVCF reblocker = new ReblockGVCF();
+
         final Genotype g = makeG("sample1", LONG_REF, Allele.NON_REF_ALLELE, 200, 100, 200, 11, 0, 37);
         final VariantContext toBeNoCalled = makeDeletionVC("lowQualVar", Arrays.asList(LONG_REF, DELETION, Allele.NON_REF_ALLELE), LONG_REF.length(), g);
         final Map<String, Object> noAttributesMap = new HashMap<>();

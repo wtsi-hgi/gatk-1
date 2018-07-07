@@ -29,7 +29,7 @@ import java.io.File;
 import java.util.*;
 
 /**
- * Perform joint genotyping on gVCF files produced by HaplotypeCaller
+ * Condense homRef blocks in a single-sample GVCF
  *
  * <p>
  * ReblockGVCF compressed a GVCF by merging hom-ref blocks that were produced using the '-ERC GVCF' or '-ERC BP_RESOLUTION' mode of the
@@ -51,7 +51,7 @@ import java.util.*;
  * <pre>
  * gatk ReblockGVCF \
  *   -R reference.fasta \
- *   --variant sample1.g.vcf \
+ *   -V sample1.g.vcf \
  *   -O sample1.reblocked.g.vcf
  * </pre>
  *
@@ -77,15 +77,12 @@ public final class ReblockGVCF extends VariantWalker {
             doc="File to which variants should be written")
     private File outputFile;
 
-    @Argument(fullName=GenotypeGVCFs.ALL_SITES_LONG_NAME, shortName=GenotypeGVCFs.ALL_SITES_SHORT_NAME, doc="Include loci found to be non-variant after genotyping")
-    public boolean includeNonVariants = true;
-
     @ArgumentCollection
     public GenotypeCalculationArgumentCollection genotypeArgs = new GenotypeCalculationArgumentCollection();
 
     @Advanced
-    @Argument(fullName="GVCF-GQ-band", shortName="GQB", doc="Exclusive upper bounds for reference confidence GQ bands " +
-            "(must be in [1, 100] and specified in increasing order)")
+    @Argument(fullName=HaplotypeCallerArgumentCollection.GQ_BAND_LONG_NAME, shortName=HaplotypeCallerArgumentCollection.GQ_BAND_SHORT_NAME,
+            doc="Exclusive upper bounds for reference confidence GQ bands (must be in [1, 100] and specified in increasing order)")
     public List<Integer> GVCFGQBands = new ArrayList<>();
     {
         GVCFGQBands.add(20); GVCFGQBands.add(100);
@@ -190,10 +187,6 @@ public final class ReblockGVCF extends VariantWalker {
         }
     }
 
-    private boolean dropVariant(final VariantContext originalVC) {
-        return !GenotypeGVCFs.isProperlyPolymorphic(originalVC) && !includeNonVariants;
-    }
-
     /**
      * Re-genotype (and re-annotate) a VariantContext
      * Note that the GVCF write takes care of the actual homRef block merging based on {@code GVCFGQBands}
@@ -202,10 +195,6 @@ public final class ReblockGVCF extends VariantWalker {
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
      */
      private VariantContext regenotypeVC(final VariantContext originalVC) {
-        if (dropVariant(originalVC)) {
-            return null;
-        }
-
         VariantContext result = originalVC;
 
         //Pass back ref-conf homRef sites/blocks to be combined by the GVCFWriter
@@ -222,7 +211,7 @@ public final class ReblockGVCF extends VariantWalker {
             result = genotypingEngine.calculateGenotypes(originalVC, model, null);
         }
 
-        if (result == null || dropVariant(result)) {
+        if (result == null) {
             return null;
         }
 
@@ -273,7 +262,12 @@ public final class ReblockGVCF extends VariantWalker {
         return genotype.getPL()[0] < rgqThreshold || genotype.isHomRef();
     }
 
-    //"reblock" a variant by converting its genotyping to homRef, changing PLs, adding reblock END tags and other attributes
+    /**
+     * "reblock" a variant by converting its genotype to homRef, changing PLs, adding reblock END tags and other attributes
+     * @param result  a variant already determined to be low quality
+     * @param originalVC the variant context with the original, full set of alleles
+     * @return
+     */
     @VisibleForTesting
     public VariantContext lowQualVariantToGQ0HomRef(final VariantContext result, final VariantContext originalVC) {
         if(dropLowQuals && !isHomRefCall(result)) {
@@ -281,7 +275,6 @@ public final class ReblockGVCF extends VariantWalker {
         }
 
         final Map<String, Object> attrMap = new HashMap<>();
-        Allele newRef = result.getReference();
         final GenotypeBuilder gb = changeCallToGQ0HomRef(result, attrMap);
 
         //there are some cases where there are low quality variants with homRef calls AND alt alleles!
