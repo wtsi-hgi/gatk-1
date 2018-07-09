@@ -156,7 +156,7 @@ public final class ReblockGVCF extends VariantWalker {
         try {
             vcfWriter = new GVCFWriter(writer, GVCFGQBands, PLOIDY_TWO);
         } catch ( IllegalArgumentException e ) {
-            throw new CommandLineException.BadArgumentValue("GQBands", "are malformed: " + e.getMessage());
+            throw new IllegalArgumentException("GQBands are malformed: " + e.getMessage(), e);
         }
         vcfWriter.writeHeader(new VCFHeader(headerLines, inputHeader.getGenotypeSamples()));
 
