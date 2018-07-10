@@ -413,7 +413,7 @@ public class CNNScoreVariants extends TwoPassVariantWalker {
         );
     }
 
-    private String getVariantInfoString(final VariantContext variant) {
+    private String getVariantInfoStringOld(final VariantContext variant) {
         // Create a string that will easily be parsed as a python dictionary
         String varInfo = "";
         for (final String attributeKey : variant.getAttributes().keySet()) {
@@ -422,7 +422,7 @@ public class CNNScoreVariants extends TwoPassVariantWalker {
         return varInfo;
     }
 
-    private String getVariantInfoStringNew(final VariantContext variant) {
+    private String getVariantInfoString(final VariantContext variant) {
         // Create a string that will easily be parsed as a python dictionary
         StringBuilder sb = new StringBuilder(FIFO_STRING_INITIAL_CAPACITY);
         for (final String attributeKey : annotationKeys) {
@@ -432,9 +432,7 @@ public class CNNScoreVariants extends TwoPassVariantWalker {
                 sb.append(variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";");
             }
         }
-        String s = sb.toString();
-        logger.info("Annos:"+s);
-        return s;
+        return sb.toString();
     }
 
     private void executePythonCommand() {

@@ -53,11 +53,9 @@ def score_and_write_batch(args, model, file_out, batch_size, python_batch_size, 
     variant_types = []
     variant_data = []
     read_batch = []
-    print("in scorer")
     for _ in range(batch_size):
         fifo_line = tool.readDataFIFO()
         fifo_data = fifo_line.split(defines.SEPARATOR_CHAR)
-        print("Fifo data[5]:",fifo_data[5])
 
         variant_data.append(fifo_data[0] + '\t' + fifo_data[1] + '\t' + fifo_data[2] + '\t' + fifo_data[3])
         reference_batch.append(reference_string_to_tensor(fifo_data[4]))
@@ -123,16 +121,14 @@ def reference_string_to_tensor(reference):
 
 
 def annotation_string_to_tensor(args, annotation_string):
-    print("Annotation string:", annotation_string)
     name_val_pairs = annotation_string.split(';')
     name_val_arrays = [p.split('=') for p in name_val_pairs]
     annotation_map = {str(p[0]).strip() : p[1] for p in name_val_arrays if len(p) > 1}
     annotation_data = np.zeros(( len(defines.ANNOTATIONS[args.annotation_set]),))
     for i,a in enumerate(defines.ANNOTATIONS[args.annotation_set]):
-        if a in annotation_map and not math.isnan(annotation_map[a]):
+        if a in annotation_map and not math.isnan(float(annotation_map[a])):
             annotation_data[i] = annotation_map[a]
 
-    print("Became:", annotation_data)
     return annotation_data
 
 
