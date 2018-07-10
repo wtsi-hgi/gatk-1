@@ -31,7 +31,8 @@ public final class ExtractOriginalAlignmentRecordsByNameSparkIntegrationTest ext
 
         final SAMFileHeader expectedHeader;
         final List<SAMRecord> expectedRecords;
-        try (final ReadsDataSource readsSource = new ReadsDataSource(IOUtils.getPath(SVIntegrationTestDataProvider.TEST_CONTIG_SAM))) {
+        try (final ReadsDataSource readsSource = new ReadsDataSource(IOUtils.getPath(SVIntegrationTestDataProvider.
+                TEST_CONTIG_SAM))) {
             expectedHeader = readsSource.getHeader();
             expectedRecords = Utils.stream(readsSource.iterator()).filter(r -> r.getName().equals("asm013903:tig00002"))
                     .sorted(Comparator.comparingInt(GATKRead::getAssignedStart)).map(r -> r.convertToSAMRecord(expectedHeader)).collect(Collectors.toList());

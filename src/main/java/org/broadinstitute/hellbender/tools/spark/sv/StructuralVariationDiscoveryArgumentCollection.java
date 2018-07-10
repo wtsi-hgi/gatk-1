@@ -230,7 +230,7 @@ public class StructuralVariationDiscoveryArgumentCollection implements Serializa
         public String svGenomeGapsFile = null;
     }
 
-    public enum SvEvidenceFilterType {DENSITY, XGBOOST;}
+    public enum SvEvidenceFilterType {DENSITY, XGBOOST}
 
     public static class DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection implements Serializable {
         private static final long serialVersionUID = 1L;

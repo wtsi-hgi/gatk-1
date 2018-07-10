@@ -158,10 +158,10 @@ public class XGBoostEvidenceFilterUnitTest extends GATKBaseTest {
 
             final BreakpointEvidence convertedEvidence = breakpointEvidenceFactory.fromStringRep(stringRep);
             final String convertedRep = convertedEvidence.stringRep(readMetadata, params.minEvidenceMapQ);
-            Assert.assertEquals(stringRep.trim(), convertedRep.trim(),
+            Assert.assertEquals(convertedRep.trim(), stringRep.trim(),
                     "BreakpointEvidenceFactory.fromStringRep does not invert BreakpointEvidence.stringRep");
             final EvidenceFeatures calcFVec = evidenceFilter.getFeatures(evidence);
-            assertArrayEquals(fVec.getValues(), calcFVec.getValues(), featuresTol, "Features calculated by XGBoostEvidenceFilter don't match expected features"
+            assertArrayEquals(calcFVec.getValues(), fVec.getValues(), featuresTol, "Features calculated by XGBoostEvidenceFilter don't match expected features"
             );
         }
     }
@@ -184,15 +184,15 @@ public class XGBoostEvidenceFilterUnitTest extends GATKBaseTest {
         final List<BreakpointEvidence> passedEvidence = new ArrayList<>();
         evidenceFilter.forEachRemaining(passedEvidence::add);
 
-        Assert.assertEquals(expectedPassed, passedEvidence,
+        Assert.assertEquals(passedEvidence, expectedPassed,
                 "Evidence passed by XGBoostEvidenceFilter not the same as expected");
     }
 
-    private static void assertArrayEquals(final double[] expecteds, final double[] actuals, final double tol,
+    private static void assertArrayEquals(final double[] actuals, final double[] expecteds, final double tol,
                                           final String message) {
-        Assert.assertEquals(expecteds.length, actuals.length, "Lengths not equal: " + message);
+        Assert.assertEquals(actuals.length, expecteds.length, "Lengths not equal: " + message);
         for(int index = 0; index < expecteds.length; ++index) {
-            Assert.assertEquals(expecteds[index], actuals[index], tol, "at index=" + index + ": " + message);
+            Assert.assertEquals(actuals[index], expecteds[index], tol, "at index=" + index + ": " + message);
         }
     }
 

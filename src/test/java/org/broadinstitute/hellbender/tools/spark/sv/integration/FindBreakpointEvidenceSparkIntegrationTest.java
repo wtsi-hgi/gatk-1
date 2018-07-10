@@ -24,22 +24,34 @@ import java.util.List;
 public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgramTest {
 
     private static final class FindBreakpointEvidenceSparkIntegrationTestArgs {
+        final String expectedAlignedContigsLoc;
         final String bamLoc;
         final String kmerIgnoreListLoc;
         final String alignerRefIndexImgLoc;
         final String outputDir;
         final float bamCoverage;
+        final String svEvidenceFilterType;
+        final String svGenomeGapsFile;
+        final String svGenomeUmapS100File;
 
-        FindBreakpointEvidenceSparkIntegrationTestArgs(final String bamLoc,
+        FindBreakpointEvidenceSparkIntegrationTestArgs(final String expectedAlignedContigsLoc,
+                                                       final String bamLoc,
                                                        final String kmerIgnoreListLoc,
                                                        final String alignerRefIndexImgLoc,
                                                        final String outputDir,
-                                                       final float bamCoverage) {
+                                                       final float bamCoverage,
+                                                       final String svEvidenceFilterType,
+                                                       final String svGenomeGapsFile,
+                                                       final String svGenomeUmapS100File) {
+            this.expectedAlignedContigsLoc = expectedAlignedContigsLoc;
             this.bamLoc = bamLoc;
             this.kmerIgnoreListLoc = kmerIgnoreListLoc;
             this.alignerRefIndexImgLoc = alignerRefIndexImgLoc;
             this.outputDir = outputDir;
             this.bamCoverage = bamCoverage;
+            this.svEvidenceFilterType = svEvidenceFilterType;
+            this.svGenomeGapsFile = svGenomeGapsFile;
+            this.svGenomeUmapS100File = svGenomeUmapS100File;
         }
 
         String getCommandLine() {
@@ -52,7 +64,9 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
                     " --target-link-file "      + outputDir + "/targetLinks.bedpe" +
                     " --min-evidence-coverage-ratio " + 15 / bamCoverage +
                     " --min-coherent-evidence-coverage-ratio " + 7 / bamCoverage +
-                    " --sv-evidence-filter-type " + "DENSITY";
+                    " --sv-evidence-filter-type " + svEvidenceFilterType +
+                    (svGenomeGapsFile.isEmpty() ? "" : " --sv-genome-gaps-file " + svGenomeGapsFile) +
+                    (svGenomeUmapS100File.isEmpty() ? "" : " --sv-genome-umap-s100-file " + svGenomeUmapS100File);
         }
 
         @Override
@@ -62,6 +76,8 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
                     ", kmer-ignore-list-loc='" + kmerIgnoreListLoc + '\'' +
                     ", aligner-ref-index-img-loc='" + alignerRefIndexImgLoc + '\'' +
                     ", output-dir='" + outputDir + '\'' +
+                    ", bam-coverage='" + bamCoverage + '\'' +
+                    ", sv-evidence-filter-type='" + svEvidenceFilterType + '\'' +
                     '}';
         }
     }
@@ -73,9 +89,30 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
         final File tempDirNew = BaseTest.createTempDir("forNew");
         tempDirNew.deleteOnExit();
         Files.createDirectories(Paths.get(tempDirNew.getAbsolutePath()+"/fastq"));
-        tests.add(new Object[]{new FindBreakpointEvidenceSparkIntegrationTestArgs(SVIntegrationTestDataProvider.TEST_BAM,
-                SVIntegrationTestDataProvider.KMER_KILL_LIST, SVIntegrationTestDataProvider.ALIGNER_INDEX_IMG,
-                tempDirNew.getAbsolutePath(), SVIntegrationTestDataProvider.TEST_BAM_COVERAGE)});
+        // Test pipeline with BreakpointDensityFilter
+        tests.add(
+                new Object[]{
+                        new FindBreakpointEvidenceSparkIntegrationTestArgs(
+                                SVIntegrationTestDataProvider.TEST_CONTIG_SAM,
+                                SVIntegrationTestDataProvider.TEST_BAM, SVIntegrationTestDataProvider.KMER_KILL_LIST,
+                                SVIntegrationTestDataProvider.ALIGNER_INDEX_IMG, tempDirNew.getAbsolutePath(),
+                                SVIntegrationTestDataProvider.TEST_BAM_COVERAGE, SVIntegrationTestDataProvider.DENSITY_FILTER,
+                                "", ""
+                        )
+                }
+        );
+        // Test pipeline using classifier filter
+        tests.add(
+                new Object[]{
+                        new FindBreakpointEvidenceSparkIntegrationTestArgs(
+                                SVIntegrationTestDataProvider.TEST_CONTIG_SAM_CLASSIFIER,
+                                SVIntegrationTestDataProvider.TEST_BAM, SVIntegrationTestDataProvider.KMER_KILL_LIST,
+                                SVIntegrationTestDataProvider.ALIGNER_INDEX_IMG, tempDirNew.getAbsolutePath(),
+                                SVIntegrationTestDataProvider.TEST_BAM_COVERAGE, SVIntegrationTestDataProvider.CLASSIFIER_FILTER,
+                                SVIntegrationTestDataProvider.TEST_GENOME_GAPS_FILE, SVIntegrationTestDataProvider.TEST_GENOME_UMAP100_FILE
+                        )
+                }
+        );
 
         return tests.toArray(new Object[][]{});
     }
@@ -83,12 +120,13 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
     @Test(dataProvider = "findBreakpointEvidenceSparkIntegrationTest", groups = "sv")
     public void testFindBreakpointRunnableLocal(final FindBreakpointEvidenceSparkIntegrationTestArgs params) throws IOException {
 
-        final ArrayList<String> expectedFiles = new ArrayList<>();
-        expectedFiles.add(SVIntegrationTestDataProvider.EXPECTED_ALIGNED_CONTIGS);
+        //final ArrayList<String> expectedFiles = new ArrayList<>();
+        //expectedFiles.add(params.expectedAlignedContigsLoc);
+        final List<String> expectedFiles = java.util.Collections.singletonList(params.expectedAlignedContigsLoc);
         new IntegrationTestSpec(
                 new ArgumentsBuilder().add(params.getCommandLine()).getString(),
-                expectedFiles)
-                .executeTest("testFindBreakpointEvidenceSparkRunnableLocal-", this);
+                expectedFiles
+        ).executeTest("testFindBreakpointEvidenceSparkRunnableLocal-", this);
     }
 
     @Test(dataProvider = "findBreakpointEvidenceSparkIntegrationTest", groups = "sv")
@@ -116,36 +154,6 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
         });
     }
 
-    @Test(dataProvider = "findBreakpointEvidenceSparkIntegrationTest", groups = "sv")
-    public void testFindBreakpointRunnableXGBoostMiniCluster(final FindBreakpointEvidenceSparkIntegrationTestArgs params) throws Exception {
-
-        MiniClusterUtils.runOnIsolatedMiniCluster(cluster -> {
-
-            final List<String> argsToBeModified = new ArrayList<>(Arrays.asList( new ArgumentsBuilder().add(params.getCommandLine()).getArgsArray() ));
-            final Path workingDirectory = MiniClusterUtils.getWorkingDir(cluster);
-
-            // copy local data to minicluster file system and update args
-            changeArgCopyFromLocal(argsToBeModified, "-I", new Path(workingDirectory, "hdfs.bam"), cluster);
-            changeArgCopyFromLocal(argsToBeModified, "--kmers-to-ignore", new Path(workingDirectory, "dummy.kill.kmers"), cluster);
-
-            // outputs, prefix with hdfs address
-            changeArg(argsToBeModified, "-O",
-                    new Path(workingDirectory, "assemblies.sam").toUri().toString());
-            changeArg(argsToBeModified, "--breakpoint-intervals",
-                    new Path(workingDirectory, "intervals").toUri().toString());
-            changeArg(argsToBeModified, "--fastq-dir",
-                    new Path(workingDirectory, "fastq").toUri().toString());
-
-            // use xgboost classifier
-            changeArg(argsToBeModified, "--sv-evidence-filter-type", "XGBOOST");
-            addArg(argsToBeModified, "--sv-genome-gaps-file", SVIntegrationTestDataProvider.TEST_GENOME_GAPS_FILE);
-            addArg(argsToBeModified, "--sv-genome-umap-s100-file", SVIntegrationTestDataProvider.TEST_GENOME_UMAP100_FILE);
-
-            new IntegrationTestSpec(String.join(" ", argsToBeModified), SVIntegrationTestDataProvider.dummyExpectedFileNames)
-                    .executeTest("testFindBreakpointEvidenceSparkRunnableXGBoostMiniCluster-", this);
-        });
-    }
-
     static private void changeArg(final List<String> argsToBeModified, final String arg, final String newVal) {
         final int idx = argsToBeModified.indexOf(arg);
         argsToBeModified.set(idx + 1, newVal);
@@ -157,10 +165,5 @@ public class FindBreakpointEvidenceSparkIntegrationTest extends CommandLineProgr
         final File file = new File(argsToBeModified.get(idx + 1));
         cluster.getFileSystem().copyFromLocalFile(new Path(file.toURI()), newPath);
         argsToBeModified.set(idx + 1, newPath.toString());
-    }
-
-    static private void addArg(final List<String> argsToBeModified, final String arg, final String newVal) {
-        argsToBeModified.add(arg);
-        argsToBeModified.add(newVal);
     }
 }
