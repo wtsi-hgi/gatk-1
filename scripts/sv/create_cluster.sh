@@ -82,13 +82,20 @@ NUM_SV_WORKERS=${NUM_SV_WORKERS:-10}
 # make *no* preemptible workers by default, but allow overload by
 # setting env variable
 NUM_SV_PREEMPTIBLE_WORKERS=${NUM_SV_PREEMPTIBLE_WORKERS:-0}
+SV_MASTER_BOOT_DISK_SIZE=${SV_MASTER_BOOT_DISK_SIZE:-500}
+SV_WORKER_BOOT_DISK_SIZE=${SV_WORKER_BOOT_DISK_SIZE:-1125}
+SV_BOOT_DISK_TYPE=${SV_BOOT_DISK_TYPE:-"pd-ssd"}
 
 gcloud beta dataproc clusters create ${CLUSTER_NAME} \
     --zone ${ZONE} \
     --master-machine-type n1-highmem-8 \
     --worker-machine-type n1-highmem-16 \
-    --master-boot-disk-size 500 \
-    --worker-boot-disk-size 500 \
+    --master-boot-disk-size $SV_MASTER_BOOT_DISK_SIZE \
+    --master-boot-disk-type $SV_BOOT_DISK_TYPE \
+    --worker-boot-disk-size $SV_WORKER_BOOT_DISK_SIZE \
+    --worker-boot-disk-type $SV_BOOT_DISK_TYPE \
+    --preemptible-worker-boot-disk-size=$SV_WORKER_BOOT_DISK_SIZE \
+    --preemptible-worker-boot-disk-type=$SV_BOOT_DISK_TYPE \
     --num-workers ${NUM_SV_WORKERS} \
     --num-preemptible-workers ${NUM_SV_PREEMPTIBLE_WORKERS} \
     --num-worker-local-ssds 1 \
