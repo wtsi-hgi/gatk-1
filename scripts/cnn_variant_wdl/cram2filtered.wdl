@@ -242,6 +242,7 @@ task RunHC4 {
         preemptible: select_first([preemptible_attempts, 3])
         cpu: select_first([cpu, 1])
         zones: "us-east4-a"
+        bootDiskSizeGb: "16"
     }
 }
 
@@ -376,6 +377,7 @@ command <<<
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])
     minCpuPlatform: "Intel Haswell"
+    bootDiskSizeGb: "16"
   }
 
   output {
@@ -428,6 +430,7 @@ task SplitIntervals {
         disks: "local-disk " + select_first([disk_space, 100]) + " SSD"
         preemptible: select_first([preemptible_attempts, 10])
         cpu: select_first([cpu, 1])
+        bootDiskSizeGb: "16"
     }
 
     output {
@@ -471,6 +474,7 @@ task MergeVCFs {
         disks: "local-disk " + select_first([disk_space, 100]) + " SSD"
         preemptible: select_first([preemptible_attempts, 10])
         cpu: select_first([cpu, 1])
+        bootDiskSizeGb: "16"
     }
 
     output {
