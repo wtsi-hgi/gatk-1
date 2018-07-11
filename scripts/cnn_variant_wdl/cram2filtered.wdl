@@ -19,7 +19,8 @@ workflow Cram2FilteredVcf {
     String info_key                  # The score key for the info field of the vcf (e.g. CNN_1D, CNN_2D)
     String tranches                  # Filtering threshold(s) in terms of sensitivity to overlapping known variants in resources
     File? gatk_override
-    String gatk_docker    
+    String gatk_docker
+    String cnn_gatk_docker
     File calling_intervals
     Int scatter_count                # Number of shards for parallelization of HaplotypeCaller and CNNScoreVariants
     String extra_args                # Extra arguments for HaplotypeCaller
@@ -89,7 +90,7 @@ workflow Cram2FilteredVcf {
                 output_prefix = output_prefix,
                 interval_list = calling_interval,
                 gatk_override = gatk_override,
-                gatk_docker = gatk_docker,
+                cnn_gatk_docker = cnn_gatk_docker,
                 preemptible_attempts = preemptible_attempts,
                 mem_gb = mem_gb
         }
@@ -265,7 +266,7 @@ task CNNScoreVariants {
 
     # Runtime parameters
     Int? mem_gb
-    String gatk_docker
+    String cnn_gatk_docker
     Int? preemptible_attempts
     Int? disk_space_gb
     Int? cpu 
@@ -302,7 +303,7 @@ command <<<
 >>>
 
   runtime {
-    docker: gatk_docker
+    docker: cnn_gatk_docker
     memory: machine_mem + " MB"
     # Note that the space before SSD and HDD should be included.
     disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
@@ -310,6 +311,7 @@ command <<<
     cpu: select_first([cpu, 1])
     minCpuPlatform: "Intel Haswell"
     zones: "us-east4-a"
+    bootDiskSizeGb: "16"
   }
 
   output {

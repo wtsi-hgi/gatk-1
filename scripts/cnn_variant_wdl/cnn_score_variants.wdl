@@ -28,6 +28,7 @@ workflow CNNScoreVariantsWorkflow {
     Int? inter_op_threads           # Tensorflow threading between nodes
     File? gatk_override
     String gatk_docker
+    String cnn_gatk_docker
     File calling_intervals
     Int scatter_count 
     Int? preemptible_attempts
@@ -68,7 +69,7 @@ workflow CNNScoreVariantsWorkflow {
                 output_prefix = output_prefix,
                 interval_list = calling_interval,
                 gatk_override = gatk_override,
-                gatk_docker = gatk_docker,
+                cnn_gatk_docker = cnn_gatk_docker,
                 preemptible_attempts = preemptible_attempts,
                 mem_gb = cnn_task_mem_gb,
                 cpu = cnn_task_cpu
@@ -125,7 +126,7 @@ task CNNScoreVariants {
 
     # Runtime parameters
     Int? mem_gb
-    String gatk_docker
+    String cnn_gatk_docker
     Int? preemptible_attempts
     Int? disk_space_gb
     Int? cpu 
@@ -165,13 +166,14 @@ command <<<
 >>>
 
   runtime {
-    docker: gatk_docker
+    docker: cnn_gatk_docker
     memory: machine_mem + " MB"
     disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])
     minCpuPlatform: "Intel Haswell"
     zones: "us-east4-a"
+    bootDiskSizeGb: "16"
   }
 
   output {
@@ -208,14 +210,16 @@ task SplitIntervals {
         export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk_override}
 
         mkdir interval-files
-        #gatk --java-options "-Xmx${command_mem}m" SplitIntervals \
-        java "-Xmx${command_mem}m" -jar ${gatk_override} \
+
+        #java "-Xmx${command_mem}m" -jar ${gatk_override} \
+        gatk --java-options "-Xmx${command_mem}m" \
             SplitIntervals \
             -R ${ref_fasta} \
             ${"-L " + intervals} \
             -scatter ${scatter_count} \
             -O interval-files \
             ${split_intervals_extra_args}
+
         cp interval-files/*.intervals .
     }
 
@@ -225,6 +229,7 @@ task SplitIntervals {
         disks: "local-disk " + select_first([disk_space, 100]) + " SSD"
         preemptible: select_first([preemptible_attempts, 10])
         cpu: select_first([cpu, 1])
+        bootDiskSizeGb: "16"
     }
 
     output {
@@ -256,8 +261,9 @@ task MergeVCFs {
 command <<<   
         set -e
         export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk_override}
-        #gatk --java-options "-Xmx${command_mem}m" \
-        java -Xmx2g -Djava.io.tmpdir=tmp -jar ${gatk_override} \
+
+        #java -Xmx2g -Djava.io.tmpdir=tmp -jar ${gatk_override} \
+        gatk --java-options "-Xmx${command_mem}m" \
             MergeVcfs -I ${sep=' -I ' input_vcfs} \
             -O "${output_vcf_name}_cnn_scored.vcf.gz"
 >>>
@@ -266,7 +272,8 @@ command <<<
     memory: machine_mem + " MB"
     disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
     preemptible: select_first([preemptible_attempts, 3])
-    cpu: select_first([cpu, 1])  
+    cpu: select_first([cpu, 1])
+    bootDiskSizeGb: "16"
   }
   output {
     File merged_vcf = "${output_vcf_name}_cnn_scored.vcf.gz"
@@ -309,9 +316,8 @@ command <<<
         set -e
         export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk_override}
 
-        #gatk --java-options "-Xmx${command_mem}m" \
-
-        java "-Xmx${command_mem}m" -jar ${gatk_override} \
+        #java "-Xmx${command_mem}m" -jar ${gatk_override} \
+        gatk --java-options "-Xmx${command_mem}m" \
         FilterVariantTranches \
         -V ${input_vcf} \
         --output ${output_vcf} \
@@ -329,7 +335,7 @@ command <<<
     disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])
-    minCpuPlatform: "Intel Haswell"
+    bootDiskSizeGb: "16"
   }
 
   output {
