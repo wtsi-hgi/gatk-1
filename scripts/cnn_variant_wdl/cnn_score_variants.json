@@ -6,7 +6,7 @@
   "CNNScoreVariantsWorkflow.calling_intervals": "gs://broad-references/hg19/v0/wgs_calling_regions.v1.interval_list",
   "CNNScoreVariantsWorkflow.cnn_gatk_docker": "samfriedman/p3_intel",
   "CNNScoreVariantsWorkflow.gatk_docker": "broadinstitute/gatk",
-  "CNNScoreVariantsWorkflow.gatk_override": "gs://broad-dsde-methods/cnn-variant-score/jars/gatk.jar",
+  "CNNScoreVariantsWorkflow.gatk_override": "gs://broad-dsde-methods/cnn-variant-score/jars/sf_gatk.jar",
   "CNNScoreVariantsWorkflow.input_vcf": "gs://broad-dsde-methods/cnn-variant-score/vcfs/g94982_b37_chr20_1m_10m.vcf.gz",
   "CNNScoreVariantsWorkflow.input_vcf_index": "gs://broad-dsde-methods/cnn-variant-score/vcfs/g94982_b37_chr20_1m_10m.vcf.gz.tbi",
   "CNNScoreVariantsWorkflow.output_prefix": "g94982_b37_chr20_1m_10m",
