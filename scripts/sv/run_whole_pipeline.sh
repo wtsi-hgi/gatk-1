@@ -52,7 +52,7 @@ if [ -z "${NUM_WORKERS}" ]; then
     echo "Cluster \"${CLUSTER_NAME}\" not found"
     exit 1
 fi
-NUM_EXECUTORS=$((1 * ${NUM_WORKERS}))
+NUM_EXECUTORS=$((2 * ${NUM_WORKERS}))
 
 GATK_SV_TOOL=${GATK_SV_TOOL:-"StructuralVariationDiscoveryPipelineSpark"}
 
@@ -92,7 +92,9 @@ case ${GATK_SV_TOOL} in
         exit 1
         ;;
 esac
-    
+
+#   --conf spark.yarn.executor.memoryOverhead=5000 \
+
 "${GATK_DIR}/gatk" ${GATK_SV_TOOL} \
     ${TOOL_OPTIONS} ${SV_ARGS} \
     -- \
@@ -100,8 +102,8 @@ esac
     --cluster "${CLUSTER_NAME}" \
     --project "${PROJECT_NAME}" \
     --num-executors ${NUM_EXECUTORS} \
-    --driver-memory 60G \
-    --executor-memory 60G \
-    --conf spark.yarn.executor.memoryOverhead=10000 \
+    --driver-memory 30G \
+    --executor-memory 30G \
+    --conf spark.executor.memoryOverhead=5000 \
     --conf spark.network.timeout=600 \
     --conf spark.executor.heartbeatInterval=120
