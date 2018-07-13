@@ -29,11 +29,12 @@ workflow Cram2FilteredVcf {
     # Runtime parameters
     Int? mem_gb
     Int? preemptible_attempts
-    Int? disk_space_gb
+    Float? disk_space_gb
     Int? cpu
 
     Int? increase_disk_size
     Int additional_disk = select_first([increase_disk_size, 20])
+    Float ref_size = size(reference_fasta, "GB") + size(reference_fasta_index, "GB") + size(reference_dict, "GB")
 
     # Clunky check to see if the input is a BAM or a CRAM
     if (basename(input_file) == basename(input_file, ".bam")){
@@ -44,7 +45,7 @@ workflow Cram2FilteredVcf {
               reference_fasta_index = reference_fasta_index,
               cram_file = input_file,
               output_prefix = output_prefix,
-              disk_space_gb = disk_space_gb,
+              disk_space_gb = size(input_file, "GB") + ref_size + additional_disk,
               preemptible_attempts = preemptible_attempts
         }
     }
@@ -57,12 +58,12 @@ workflow Cram2FilteredVcf {
             ref_fasta = reference_fasta,
             ref_dict = reference_dict,
             ref_fai = reference_fasta_index,
-            gatk_docker = gatk_docker
+            gatk_docker = gatk_docker,
+            disk_space_gb = additional_disk + ref_size
     }
 
     String input_bam = select_first([CramToBam.output_bam, input_file])
     Float bam_size = size(input_bam, "GB")
-    Float ref_size = size(reference_fasta, "GB") + size(reference_fasta_index, "GB") + size(reference_dict, "GB")
 
     scatter (calling_interval in SplitIntervals.interval_files) {
 
@@ -103,7 +104,8 @@ workflow Cram2FilteredVcf {
                 gatk_override = gatk_override,
                 cnn_gatk_docker = cnn_gatk_docker,
                 preemptible_attempts = preemptible_attempts,
-                mem_gb = mem_gb
+                mem_gb = mem_gb,
+                disk_space_gb = (bam_size / scatter_count) + ref_size + additional_disk
         }
     }
 
@@ -113,7 +115,8 @@ workflow Cram2FilteredVcf {
             output_prefix = output_prefix,
             gatk_override = gatk_override,
             preemptible_attempts = preemptible_attempts,
-            gatk_docker = gatk_docker
+            gatk_docker = gatk_docker,
+            disk_space_gb = additional_disk
     }
 
     call FilterVariantTranches {
@@ -127,13 +130,15 @@ workflow Cram2FilteredVcf {
             info_key = info_key,
             gatk_override = gatk_override,
             preemptible_attempts = preemptible_attempts,
-            gatk_docker = gatk_docker
+            gatk_docker = gatk_docker,
+            disk_space_gb = additional_disk
     }
 
     call SamtoolsMergeBAMs {
         input:
             input_bams = RunHC4.bamout,
-            output_prefix = output_prefix
+            output_prefix = output_prefix,
+            disk_space_gb = bam_size + ref_size + additional_disk
     }
 
     output {
@@ -153,13 +158,12 @@ task CramToBam {
     # Runtime parameters
     Int? mem_gb
     Int? preemptible_attempts
-    Int? disk_space_gb
+    Float disk_space_gb
     Int? cpu 
 
     # You may have to change the following two parameter values depending on the task requirements
     Int default_ram_mb = 16000
-    # WARNING: In the workflow, you should calculate the disk space as an input to this task (disk_space_gb).
-    Int default_disk_space_gb = 200
+
 
     # Mem is in units of GB but our command and memory runtime values are in MB
     Int machine_mem = if defined(mem_gb) then mem_gb *1000 else default_ram_mb
@@ -185,8 +189,9 @@ command <<<
   runtime {
     docker: "broadinstitute/genomes-in-the-cloud:2.1.1"
     memory: machine_mem + " MB"
+
     # Note that the space before SSD and HDD should be included.
-    disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
+    disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])  
   }
@@ -212,13 +217,11 @@ task RunHC4 {
     Int? mem_gb
     String gatk_docker
     Int? preemptible_attempts
-    Int? disk_space_gb
+    Float disk_space_gb
     Int? cpu 
 
     # You may have to change the following two parameter values depending on the task requirements
     Int default_ram_mb = 8000
-    # WARNING: In the workflow, you should calculate the disk space as an input to this task (disk_space_gb).
-    Int default_disk_space_gb = 200
 
     # Mem is in units of GB but our command and memory runtime values are in MB
     Int machine_mem = if defined(mem_gb) then mem_gb *1000 else default_ram_mb
@@ -248,7 +251,7 @@ task RunHC4 {
         docker: gatk_docker
         memory: machine_mem + " MB"
         # Note that the space before SSD and HDD should be included.
-        disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
+        disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
         preemptible: select_first([preemptible_attempts, 3])
         cpu: select_first([cpu, 1])
         zones: "us-east4-a"
@@ -279,15 +282,13 @@ task CNNScoreVariants {
     Int? mem_gb
     String cnn_gatk_docker
     Int? preemptible_attempts
-    Int? disk_space_gb
+    Float disk_space_gb
     Int? cpu 
 
     String output_vcf = "${output_prefix}_cnn_annotated.vcf.gz"
 
     # You may have to change the following two parameter values depending on the task requirements
     Int default_ram_mb = 16000
-    # WARNING: In the workflow, you should calculate the disk space as an input to this task (disk_space_gb).
-    Int default_disk_space_gb = 200
 
     # Mem is in units of GB but our command and memory runtime values are in MB
     Int machine_mem = if defined(mem_gb) then mem_gb *1000 else default_ram_mb
@@ -316,10 +317,10 @@ command <<<
   runtime {
     docker: cnn_gatk_docker
     memory: machine_mem + " MB"
-    # Note that the space before SSD and HDD should be included.
-    disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
+    disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])
+
     # minCpuPlatform isn't respected by cromwell yet, but the us-east4-a zone guarantees >=Haswell
     minCpuPlatform: "Intel Haswell"
     zones: "us-east4-a"
@@ -349,15 +350,13 @@ task FilterVariantTranches {
     Int? mem_gb
     String gatk_docker
     Int? preemptible_attempts
-    Int? disk_space_gb
+    Float disk_space_gb
     Int? cpu
 
     String output_vcf = "${output_prefix}_filtered.vcf.gz"
 
     # You may have to change the following two parameter values depending on the task requirements
     Int default_ram_mb = 16000
-    # WARNING: In the workflow, you should calculate the disk space as an input to this task (disk_space_gb).
-    Int default_disk_space_gb = 200
 
     # Mem is in units of GB but our command and memory runtime values are in MB
     Int machine_mem = if defined(mem_gb) then mem_gb *1000 else default_ram_mb
@@ -382,7 +381,7 @@ command <<<
     docker: gatk_docker
     memory: machine_mem + " MB"
     # Note that the space before SSD and HDD should be included.
-    disks: "local-disk " + select_first([disk_space_gb, default_disk_space_gb]) + " SSD"
+    disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
     preemptible: select_first([preemptible_attempts, 3])
     cpu: select_first([cpu, 1])
     bootDiskSizeGb: "16"
@@ -410,7 +409,7 @@ task SplitIntervals {
     String gatk_docker
     Int? mem
     Int? preemptible_attempts
-    Int? disk_space
+    Float disk_space_gb
     Int? cpu
 
     # Mem is in units of GB but our command and memory runtime values are in MB
@@ -435,7 +434,7 @@ task SplitIntervals {
     runtime {
         docker: gatk_docker
         memory: machine_mem + " MB"
-        disks: "local-disk " + select_first([disk_space, 100]) + " SSD"
+        disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
         preemptible: select_first([preemptible_attempts, 10])
         cpu: select_first([cpu, 1])
         bootDiskSizeGb: "16"
@@ -457,7 +456,7 @@ task MergeVCFs {
     String gatk_docker
     Int? mem
     Int? preemptible_attempts
-    Int? disk_space
+    Float disk_space_gb
     Int? cpu
 
     String output_vcf = "${output_prefix}_cnn_scored.vcf.gz"
@@ -478,7 +477,7 @@ task MergeVCFs {
     runtime {
         docker: gatk_docker
         memory: machine_mem + " MB"
-        disks: "local-disk " + select_first([disk_space, 100]) + " SSD"
+        disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
         preemptible: select_first([preemptible_attempts, 10])
         cpu: select_first([cpu, 1])
         bootDiskSizeGb: "16"
@@ -493,6 +492,7 @@ task MergeVCFs {
 task SamtoolsMergeBAMs {
     Array[File] input_bams
     String output_prefix
+    Float disk_space_gb
     command {
         samtools merge ${output_prefix}_bamout.bam ${sep=' ' input_bams}
         samtools index ${output_prefix}_bamout.bam ${output_prefix}_bamout.bai
@@ -506,6 +506,6 @@ task SamtoolsMergeBAMs {
   runtime {
     docker: "broadinstitute/genomes-in-the-cloud:2.1.1"
     memory: "16 GB"
-    disks: "local-disk 400 HDD"
+    disks: "local-disk " + sub(disk_space_gb, "\\..*", "") + " HDD"
   }    
 }
