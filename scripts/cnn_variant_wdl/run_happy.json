@@ -10,7 +10,5 @@
   "HappyWorkflow.disk_space": "100",
   "HappyWorkflow.cpu": "2",
   "HappyWorkflow.mem_gb": "16",
-  "HappyWorkflow.gatk_docker": "samfriedman/p3",
-  "HappyWorkflow.gatk_override": "gs://broad-dsde-methods/sam/jars/gatk.jar",
   "HappyWorkflow.preemptible_attempts": "0"
 }
