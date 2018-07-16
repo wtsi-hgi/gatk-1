@@ -40,7 +40,7 @@ public final class EmptyFragment extends PairedEnds {
         return Type.EMPTY_FRAGMENT;
     }
     @Override
-    public int getScore() {
+    public short getScore() {
         return 0;
     }
     @Override

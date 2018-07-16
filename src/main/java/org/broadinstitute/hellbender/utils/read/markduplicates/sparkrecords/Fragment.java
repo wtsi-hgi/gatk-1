@@ -24,7 +24,7 @@ public class Fragment extends TransientFieldPhysicalLocation {
     private final int firstStartPosition;
     private final boolean R1R;
 
-    protected final int score;
+    protected final short score;
 
     public Fragment(final GATKRead first, final SAMFileHeader header, int partitionIndex, MarkDuplicatesScoringStrategy scoringStrategy, Map<String, Byte> headerLibraryMap) {
         super(partitionIndex, first.getName());
@@ -48,7 +48,7 @@ public class Fragment extends TransientFieldPhysicalLocation {
         return key;
     }
     @Override
-    public int getScore() {
+    public short getScore() {
       return score;
     }
     @Override

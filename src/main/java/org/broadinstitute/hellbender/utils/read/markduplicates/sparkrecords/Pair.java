@@ -29,7 +29,7 @@ public final class Pair extends TransientFieldPhysicalLocation {
     private final boolean isRead1ReverseStrand;
 
     private final boolean isRead2ReverseStrand;
-    private final int score;
+    private final short score;
     private final boolean wasFlipped;
 
     public Pair(final GATKRead read1, final GATKRead read2, final SAMFileHeader header, int partitionIndex, MarkDuplicatesScoringStrategy scoringStrategy, Map<String, Byte> headerLibraryMap) {
@@ -39,7 +39,7 @@ public final class Pair extends TransientFieldPhysicalLocation {
         final String name2 = read2.getName();
         Utils.validate(name1.equals(name2), () -> "Paired reads have different names\n" + name1 + "\n" + name2);
 
-        this.score = scoringStrategy.score(read1) + scoringStrategy.score(read2);
+        this.score = (short)(scoringStrategy.score(read1) + scoringStrategy.score(read2));
 
         GATKRead first = read1;
         GATKRead second;
@@ -93,7 +93,7 @@ public final class Pair extends TransientFieldPhysicalLocation {
         y = -1;
         libraryId = -1;
 
-        score = input.readInt();
+        score = input.readShort();
 
         firstStartPosition = input.readInt();
         isRead1ReverseStrand = input.readBoolean();
@@ -108,7 +108,7 @@ public final class Pair extends TransientFieldPhysicalLocation {
         output.writeInt(partitionIndex, true);
         output.writeAscii(name);
 
-        output.writeInt(score);
+        output.writeShort(score);
 
         output.writeInt(firstStartPosition);
         output.writeBoolean(isRead1ReverseStrand);
@@ -129,7 +129,7 @@ public final class Pair extends TransientFieldPhysicalLocation {
         return key;
     }
     @Override
-    public int getScore() {
+    public short getScore() {
         return score;
     }
     @Override
